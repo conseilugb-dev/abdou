@@ -22,20 +22,17 @@ export default function Members() {
   const [fField,setFField]=useState("");
   const [view,setView]=useState<"active"|"inactive"|"all">("active");
   const [open,setOpen]=useState(false);
-  // Champs demandés pour chaque membre. "locality" = Adresse, "function_name" = Fonction dans la section.
+  // Champs demandés pour chaque membre. "locality" = Adresse au campus, "section_id" = UFR.
   type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[]};
   const FIELD_DEFS:FieldDef[]=[
     {key:"first_name",label:"Prénom",required:true},
     {key:"last_name",label:"Nom",required:true},
     {key:"email",label:"Email",required:true,type:"email"},
     {key:"phone",label:"Téléphone",required:true,type:"tel"},
-    {key:"locality",label:"Adresse",required:true},
+    {key:"locality",label:"Adresse au campus",required:true},
     {key:"study_field",label:"Filière"},
     {key:"study_level",label:"Niveau d’étude",options:["L1","L2","L3","M1","M2","Doctorat","Autre"]},
-    {key:"section_id",label:"Section"},
-    {key:"function_name",label:"Fonction dans la section"},
-    {key:"join_year",label:"Année d’adhésion",type:"number"},
-    {key:"guardian_phone",label:"Numéro du tuteur",type:"tel"},
+    {key:"section_id",label:"UFR"},
     {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
   ];
   const [sections,setSections]=useState<{id:string;name:string}[]>([]);
@@ -49,7 +46,7 @@ export default function Members() {
     setPhotoErr("");
     if(!f){setPhotoFile(null);return;}
     if(!f.type.startsWith("image/")){setPhotoErr("Choisis une image (JPG, PNG…).");return;}
-    if(f.size>3*1024*1024){setPhotoErr("Photo trop lourde (3 Mo maximum).");return;}
+    if(f.size>2*1024*1024){setPhotoErr("Photo trop lourde (2 Mo maximum).");return;}
     setPhotoFile(f);
   };
   async function uploadPhoto(f:File):Promise<string|null>{
@@ -76,8 +73,8 @@ export default function Members() {
     const n=(x:string)=>(x??"").trim()||null;
     return {
       first_name:v.first_name.trim(),last_name:v.last_name.trim(),email:n(v.email),phone:n(v.phone),locality:n(v.locality),
-      study_field:n(v.study_field),study_level:n(v.study_level),section_id:n(v.section_id),function_name:n(v.function_name),
-      join_year:v.join_year?Number(v.join_year):null,guardian_phone:n(v.guardian_phone),blood_group:n(v.blood_group),
+      study_field:n(v.study_field),study_level:n(v.study_level),section_id:n(v.section_id),
+      blood_group:n(v.blood_group),
     };
   };
 
@@ -178,13 +175,13 @@ export default function Members() {
   }
 
   // ----- Import Excel / CSV -----
-  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;function_name:string|null;study_field:string|null;study_level:string|null;section_id:string|null;join_year:number|null;guardian_phone:string|null;blood_group:string|null};
+  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;study_field:string|null;study_level:string|null;section_id:string|null;blood_group:string|null};
   const [imp,setImp]=useState<{rows:Imp[];dup:number;bad:number;homonyms:number;review:Imp[]}|null>(null);
   const [includeReview,setIncludeReview]=useState(false);
   const [impOpen,setImpOpen]=useState(false);
   const [impMsg,setImpMsg]=useState("");
   const norm=(v:unknown)=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
-  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","ville","quartier"],function_name:["fonction","poste","role","fonctiondanslasection"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],section_id:["sectiondebase","section"],join_year:["anneedadhesion","anneeadhesion","adhesion"],guardian_phone:["numerodututeur","tuteur","telephonedututeur"],blood_group:["groupesanguin","groupe","sang"]};
+  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","adresseaucampus","ville","quartier"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],section_id:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"]};
   const toDate=(v:unknown)=>{if(!v)return null;if(v instanceof Date&&!isNaN(+v))return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);const t=String(v).trim();const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;return /^\d{4}-\d{2}-\d{2}$/.test(t)?t:null;};
   async function readFile(f:File){
     setImpMsg("");setImp(null);
@@ -202,7 +199,7 @@ export default function Members() {
         const first=String(g("first_name")).trim(),last=String(g("last_name")).trim();
         if(!first||!last){bad++;return;}
         const t=(k:string)=>String(g(k)).trim()||null;
-        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),function_name:t("function_name"),study_field:t("study_field"),study_level:t("study_level"),section_id:(()=>{const nm=norm(g("section_id"));return nm?(sections.find(x=>norm(x.name)===nm)?.id||null):null;})(),join_year:(()=>{const y=parseInt(String(g("join_year")),10);return isNaN(y)?null:y;})(),guardian_phone:t("guardian_phone"),blood_group:t("blood_group")};
+        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),study_field:t("study_field"),study_level:t("study_level"),section_id:(()=>{const nm=norm(g("section_id"));return nm?(sections.find(x=>norm(x.name)===nm)?.id||null):null;})(),blood_group:t("blood_group")};
         const id=`${norm(first)}|${norm(last)}`;
         const mine=phoneKey(row.phone);
         const known=byName.get(id);
@@ -229,7 +226,7 @@ export default function Members() {
     setImpMsg(`${toAdd.length} membre(s) ajouté(s).`);setImp(null);setIncludeReview(false);load();
   }
   function template(){
-    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Adresse","Filière","Niveau d’étude","Section","Fonction dans la section","Année d’adhésion","Numéro du tuteur","Groupe sanguin"],["Awa","Fall","awa@example.com","770000000","Saint-Louis","Informatique","L2","Section A","Membre",2025,"780000000","O+"]]);
+    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Adresse au campus","Filière","Niveau d’étude","UFR","Groupe sanguin"],["Awa","Fall","awa@example.com","770000000","Pavillon A","Informatique","L2","UFR SAT","O+"]]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Membres");XLSX.writeFile(wb,"modele-import-membres.xlsx");
   }
 
@@ -245,9 +242,9 @@ export default function Members() {
 
   function exportExcel(){
     const rows=sorted.map(m=>({
-      "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Adresse":m.locality||"",
-      "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","Section":sectionName(m.section_id)||"","Fonction dans la section":m.function_name||"",
-      "Année d’adhésion":m.join_year??"","Numéro du tuteur":m.guardian_phone||"","Groupe sanguin":m.blood_group||"",
+      "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Adresse au campus":m.locality||"",
+      "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","UFR":sectionName(m.section_id)||"",
+      "Groupe sanguin":m.blood_group||"",
       "Sexe":m.gender||"","Date de naissance":m.birth_date||"","Statut":m.status==="active"?"Actif":"Ancien membre","Photo (lien)":m.photo_url||"","Notes":m.notes||"","Créé le":(m.created_at||"").slice(0,10),
     }));
     const ws=XLSX.utils.json_to_sheet(rows);
@@ -266,7 +263,7 @@ export default function Members() {
         <option value="member_number:asc">Trier : N° de membre</option>
         <option value="created_at:desc">Trier : Plus récents d'abord</option>
       </select>
-      <select aria-label="Filtrer par section" value={fSection} onChange={e=>setFSection(e.target.value)}><option value="">Toutes les sections</option>{sections.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}<option value="__none">Sans section</option></select>
+      <select aria-label="Filtrer par UFR" value={fSection} onChange={e=>setFSection(e.target.value)}><option value="">Toutes les UFR</option>{sections.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}<option value="__none">Sans UFR</option></select>
       <select aria-label="Filtrer par niveau" value={fLevel} onChange={e=>setFLevel(e.target.value)}><option value="">Tous les niveaux</option>{["L1","L2","L3","M1","M2","Doctorat","Autre"].map(l=><option key={l} value={l}>{l}</option>)}</select>
       <select aria-label="Filtrer par filière" value={fField} onChange={e=>setFField(e.target.value)}><option value="">Toutes les filières</option>{fields.map(f=><option key={f} value={f}>{f}</option>)}</select>
       {(fSection||fLevel||fField)&&<button type="button" className="secondary" onClick={()=>{setFSection("");setFLevel("");setFField("");}}>Effacer les filtres</button>}
@@ -279,7 +276,7 @@ export default function Members() {
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setOpen(false)}>Annuler</button><button className="primary">Enregistrer</button></div>
     </form></div>}
     {impOpen&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><h2>Importer des membres</h2><button type="button" className="icon-btn" onClick={()=>setImpOpen(false)}>×</button></div>
-      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom</b> (obligatoires), Email, Téléphone, Adresse, Filière, Niveau d’étude, Section, Fonction dans la section, Année d’adhésion, Numéro du tuteur, Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
+      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom</b> (obligatoires), Email, Téléphone, Adresse au campus, Filière, Niveau d’étude, UFR, Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);}}/>
       <p style={{marginBottom:0}}><button type="button" className="secondary" onClick={template}>Télécharger le modèle</button></p></div>
       {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom/prénom ignorée(s)</div>}
@@ -311,13 +308,10 @@ export default function Members() {
         ["Nom",detail.last_name],
         ["E-mail",detail.email],
         ["Téléphone",detail.phone],
-        ["Adresse",detail.locality],
+        ["Adresse au campus",detail.locality],
         ["Filière",ext(detail,"study_field")],
         ["Niveau d’étude",ext(detail,"study_level")],
-        ["Section",sectionName(detail.section_id)],
-        ["Fonction dans la section",detail.function_name],
-        ["Année d’adhésion",ext(detail,"join_year")],
-        ["Numéro du tuteur",ext(detail,"guardian_phone")],
+        ["UFR",sectionName(detail.section_id)],
         ["Groupe sanguin",ext(detail,"blood_group")],
         ["Sexe",detail.gender==="F"?"Féminin":detail.gender==="M"?"Masculin":detail.gender],
         ["Date de naissance",detail.birth_date?`${fmtDate(detail.birth_date)}${ageOf(detail.birth_date)!==null?` (${ageOf(detail.birth_date)} ans)`:""}`:null],
