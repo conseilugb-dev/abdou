@@ -18,6 +18,7 @@ export interface Member {
   id: string;
   organization_id: string;
   section_id: string | null;
+  ufr: string | null;
   member_number: string;
   first_name: string;
   last_name: string;

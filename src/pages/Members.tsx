@@ -22,7 +22,8 @@ export default function Members() {
   const [fField,setFField]=useState("");
   const [view,setView]=useState<"active"|"inactive"|"all">("active");
   const [open,setOpen]=useState(false);
-  // Champs demandés pour chaque membre. "locality" = Adresse au campus, "section_id" = UFR.
+  const UFRS=["SAT","SJP","SEFS","SEG","S2ATA","CRAC","IPSL","2S","Formation","LSH","Autre"];
+  // Champs demandés pour chaque membre. "locality" = Adresse au campus, "ufr" = UFR.
   type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[]};
   const FIELD_DEFS:FieldDef[]=[
     {key:"first_name",label:"Prénom",required:true},
@@ -31,13 +32,10 @@ export default function Members() {
     {key:"phone",label:"Téléphone",required:true,type:"tel"},
     {key:"locality",label:"Adresse au campus",required:true},
     {key:"study_field",label:"Filière"},
-    {key:"study_level",label:"Niveau d’étude",options:["L1","L2","L3","M1","M2","Doctorat","Autre"]},
-    {key:"section_id",label:"UFR"},
+    {key:"study_level",label:"Niveau d’étude",options:["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Autre"]},
+    {key:"ufr",label:"UFR",options:UFRS},
     {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
   ];
-  const [sections,setSections]=useState<{id:string;name:string}[]>([]);
-  useEffect(()=>{supabase.from("sections").select("id,name").eq("is_active",true).order("name").then(({data})=>setSections((data||[]) as {id:string;name:string}[]));},[]);
-  const sectionName=(id:string|null)=>sections.find(x=>x.id===id)?.name||null;
   const blankForm=():Record<string,string>=>({...Object.fromEntries(FIELD_DEFS.map(f=>[f.key,""])),status:"active"});
   const [form,setForm]=useState<Record<string,string>>(blankForm());
   const [photoFile,setPhotoFile]=useState<File|null>(null);
@@ -63,9 +61,7 @@ export default function Members() {
   </label>;
   const renderField=(f:FieldDef,values:Record<string,string>,set:(v:Record<string,string>)=>void)=>
     <label key={f.key}>{f.label}{f.required?" *":""}
-      {f.key==="section_id"
-        ?<select value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}><option value="">—</option>{sections.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
-        :f.options
+      {f.options
         ?<select required={f.required} value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}><option value="">—</option>{f.options.map(o=><option key={o} value={o}>{o}</option>)}</select>
         :<input required={f.required} type={f.type||"text"} {...(f.type==="number"?{min:1990,max:2100}:{})} value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}/>}
     </label>;
@@ -73,7 +69,7 @@ export default function Members() {
     const n=(x:string)=>(x??"").trim()||null;
     return {
       first_name:v.first_name.trim(),last_name:v.last_name.trim(),email:n(v.email),phone:n(v.phone),locality:n(v.locality),
-      study_field:n(v.study_field),study_level:n(v.study_level),section_id:n(v.section_id),
+      study_field:n(v.study_field),study_level:n(v.study_level),ufr:n(v.ufr),
       blood_group:n(v.blood_group),
     };
   };
@@ -107,6 +103,7 @@ export default function Members() {
   async function saveEdit(e:FormEvent){
     e.preventDefault();
     if(!detail)return;
+    if(!edit.phone.trim()){alert("Le téléphone est obligatoire.");return;}
     const n=(v:string)=>v.trim()||null;
     const payload:Record<string,unknown>={...toPayload(edit),gender:n(edit.gender),birth_date:edit.birth_date||null,status:edit.status,notes:n(edit.notes)};
     if(photoFile){const url=await uploadPhoto(photoFile);if(!url)return;payload.photo_url=url;}
@@ -150,6 +147,7 @@ export default function Members() {
 
   async function add(e:FormEvent){
     e.preventDefault();
+    if(!form.phone.trim()){alert("Le téléphone est obligatoire.");return;}
     const payload:Record<string,unknown>={...toPayload(form),status:"active"};
     if(photoFile){const url=await uploadPhoto(photoFile);if(!url)return;payload.photo_url=url;}
     const {error}=await supabase.from("members").insert(payload);
@@ -175,13 +173,13 @@ export default function Members() {
   }
 
   // ----- Import Excel / CSV -----
-  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;study_field:string|null;study_level:string|null;section_id:string|null;blood_group:string|null};
+  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;study_field:string|null;study_level:string|null;ufr:string|null;blood_group:string|null};
   const [imp,setImp]=useState<{rows:Imp[];dup:number;bad:number;homonyms:number;review:Imp[]}|null>(null);
   const [includeReview,setIncludeReview]=useState(false);
   const [impOpen,setImpOpen]=useState(false);
   const [impMsg,setImpMsg]=useState("");
   const norm=(v:unknown)=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
-  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","adresseaucampus","ville","quartier"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],section_id:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"]};
+  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","adresseaucampus","ville","quartier"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],ufr:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"]};
   const toDate=(v:unknown)=>{if(!v)return null;if(v instanceof Date&&!isNaN(+v))return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);const t=String(v).trim();const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;return /^\d{4}-\d{2}-\d{2}$/.test(t)?t:null;};
   async function readFile(f:File){
     setImpMsg("");setImp(null);
@@ -197,9 +195,9 @@ export default function Members() {
       raw.forEach(r=>{
         const g=(k:string)=>{const key=Object.keys(r).find(c=>FIELDS[k].includes(norm(c)));return key?r[key]:"";};
         const first=String(g("first_name")).trim(),last=String(g("last_name")).trim();
-        if(!first||!last){bad++;return;}
         const t=(k:string)=>String(g(k)).trim()||null;
-        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),study_field:t("study_field"),study_level:t("study_level"),section_id:(()=>{const nm=norm(g("section_id"));return nm?(sections.find(x=>norm(x.name)===nm)?.id||null):null;})(),blood_group:t("blood_group")};
+        if(!first||!last||!t("phone")){bad++;return;}
+        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group")};
         const id=`${norm(first)}|${norm(last)}`;
         const mine=phoneKey(row.phone);
         const known=byName.get(id);
@@ -237,13 +235,13 @@ export default function Members() {
   const arrow=(k:SortKey)=>sortKey===k?(sortDir==="asc"?" ▲":" ▼"):"";
   const thSort={cursor:"pointer",userSelect:"none"} as const;
   const fields=[...new Set(members.map(m=>(m.study_field||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
-  const filtered=members.filter(m=>(view==="all"||m.status===view)&&(!fSection||(fSection==="__none"?!m.section_id:m.section_id===fSection))&&(!fLevel||m.study_level===fLevel)&&(!fField||(m.study_field||"").trim()===fField)&&`${m.first_name} ${m.last_name} ${m.phone||""} ${m.email||""}`.toLowerCase().includes(q.toLowerCase()));
+  const filtered=members.filter(m=>(view==="all"||m.status===view)&&(!fSection||(fSection==="__none"?!m.ufr:m.ufr===fSection))&&(!fLevel||m.study_level===fLevel)&&(!fField||(m.study_field||"").trim()===fField)&&`${m.first_name} ${m.last_name} ${m.phone||""} ${m.email||""}`.toLowerCase().includes(q.toLowerCase()));
   const sorted=[...filtered].sort((a,b)=>{const r=collator.compare(sortValue(a),sortValue(b));return sortDir==="asc"?r:-r;});
 
   function exportExcel(){
     const rows=sorted.map(m=>({
       "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Adresse au campus":m.locality||"",
-      "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","UFR":sectionName(m.section_id)||"",
+      "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","UFR":m.ufr||"",
       "Groupe sanguin":m.blood_group||"",
       "Sexe":m.gender||"","Date de naissance":m.birth_date||"","Statut":m.status==="active"?"Actif":"Ancien membre","Photo (lien)":m.photo_url||"","Notes":m.notes||"","Créé le":(m.created_at||"").slice(0,10),
     }));
@@ -263,7 +261,7 @@ export default function Members() {
         <option value="member_number:asc">Trier : N° de membre</option>
         <option value="created_at:desc">Trier : Plus récents d'abord</option>
       </select>
-      <select aria-label="Filtrer par UFR" value={fSection} onChange={e=>setFSection(e.target.value)}><option value="">Toutes les UFR</option>{sections.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}<option value="__none">Sans UFR</option></select>
+      <select aria-label="Filtrer par UFR" value={fSection} onChange={e=>setFSection(e.target.value)}><option value="">Toutes les UFR</option>{UFRS.map(x=><option key={x} value={x}>{x}</option>)}<option value="__none">Sans UFR</option></select>
       <select aria-label="Filtrer par niveau" value={fLevel} onChange={e=>setFLevel(e.target.value)}><option value="">Tous les niveaux</option>{["L1","L2","L3","M1","M2","Doctorat","Autre"].map(l=><option key={l} value={l}>{l}</option>)}</select>
       <select aria-label="Filtrer par filière" value={fField} onChange={e=>setFField(e.target.value)}><option value="">Toutes les filières</option>{fields.map(f=><option key={f} value={f}>{f}</option>)}</select>
       {(fSection||fLevel||fField)&&<button type="button" className="secondary" onClick={()=>{setFSection("");setFLevel("");setFField("");}}>Effacer les filtres</button>}
@@ -276,10 +274,10 @@ export default function Members() {
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setOpen(false)}>Annuler</button><button className="primary">Enregistrer</button></div>
     </form></div>}
     {impOpen&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><h2>Importer des membres</h2><button type="button" className="icon-btn" onClick={()=>setImpOpen(false)}>×</button></div>
-      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom</b> (obligatoires), Email, Téléphone, Adresse au campus, Filière, Niveau d’étude, UFR, Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
+      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Adresse au campus, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);}}/>
       <p style={{marginBottom:0}}><button type="button" className="secondary" onClick={template}>Télécharger le modèle</button></p></div>
-      {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom/prénom ignorée(s)</div>}
+      {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom, prénom ou téléphone ignorée(s)</div>}
       {imp&&imp.review.length>0&&<div className="error-box" style={{background:"#fff8e6",borderColor:"#f5d78a",color:"#8a5a00",marginTop:12}}>
         <b>{imp.review.length} homonyme(s) à vérifier</b> : même prénom et nom qu'un membre déjà enregistré, mais un téléphone manque pour savoir si c'est la même personne. Ils ne sont pas ajoutés par défaut.
         <ul style={{margin:"8px 0",paddingLeft:18}}>{imp.review.slice(0,8).map((r,i)=><li key={i}>{r.last_name} {r.first_name} — {r.phone||"pas de numéro"}</li>)}{imp.review.length>8&&<li>… et {imp.review.length-8} autre(s)</li>}</ul>
@@ -311,7 +309,7 @@ export default function Members() {
         ["Adresse au campus",detail.locality],
         ["Filière",ext(detail,"study_field")],
         ["Niveau d’étude",ext(detail,"study_level")],
-        ["UFR",sectionName(detail.section_id)],
+        ["UFR",detail.ufr],
         ["Groupe sanguin",ext(detail,"blood_group")],
         ["Sexe",detail.gender==="F"?"Féminin":detail.gender==="M"?"Masculin":detail.gender],
         ["Date de naissance",detail.birth_date?`${fmtDate(detail.birth_date)}${ageOf(detail.birth_date)!==null?` (${ageOf(detail.birth_date)} ans)`:""}`:null],
