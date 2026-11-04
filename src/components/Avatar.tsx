@@ -13,7 +13,16 @@ function hash(text: string) {
   return h;
 }
 
-export default function Avatar({ first, last, size = 34 }: { first: string; last: string; size?: number }) {
+export default function Avatar({ first, last, size = 34, photoUrl }: { first: string; last: string; size?: number; photoUrl?: string | null }) {
+  if (photoUrl) {
+    return (
+      <img
+        src={photoUrl}
+        alt=""
+        style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, verticalAlign: "middle" }}
+      />
+    );
+  }
   const [bg, fg] = PALETTE[hash(`${first} ${last}`.toLowerCase()) % PALETTE.length];
   return (
     <span

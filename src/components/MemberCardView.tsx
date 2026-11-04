@@ -17,11 +17,13 @@ export default function MemberCardView({
   lastName,
   memberNumber,
   token,
+  photoUrl,
 }: {
   firstName: string;
   lastName: string;
   memberNumber: string;
   token: string;
+  photoUrl?: string | null;
 }) {
   const b = useBranding();
   const footer = [b.conseil, b.comite].filter((l) => l.length > 0).join(" · ");
@@ -54,6 +56,14 @@ export default function MemberCardView({
         />
         <div style={{ marginTop: 10, fontSize: 13, fontWeight: 700, letterSpacing: ".04em" }}>{b.organization_name}</div>
         <div style={{ marginTop: 4, fontSize: 10.5, fontWeight: 800, letterSpacing: ".28em", color: "#f3d9b1" }}>CARTE DE MEMBRE</div>
+
+        {photoUrl && (
+          <img
+            src={photoUrl}
+            alt=""
+            style={{ display: "block", margin: "16px auto 0", width: 96, height: 96, borderRadius: "50%", objectFit: "cover", border: "3px solid #f3d9b1", background: "#fff" }}
+          />
+        )}
 
         <div style={{ height: 1, margin: "16px auto", width: "70%", background: "linear-gradient(90deg, transparent, #d9a066, transparent)" }} />
 

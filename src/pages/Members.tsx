@@ -3,7 +3,7 @@ import StatusBadge from "../components/StatusBadge";
 import Avatar from "../components/Avatar";
 import EmptyState from "../components/EmptyState";
 import MemberCardView from "../components/MemberCardView";
-import { MessageCircle, Phone, Plus, QrCode, Search, Trash2, UserCheck, UserRoundPen, UserX, Upload } from "lucide-react";
+import { Download, MessageCircle, Phone, Plus, QrCode, Search, Trash2, UserCheck, UserRoundPen, UserX, Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
 import PageHeader from "../components/PageHeader";
@@ -17,9 +17,69 @@ export default function Members() {
   type SortKey="last_name"|"first_name"|"member_number"|"created_at";
   const [sortKey,setSortKey]=useState<SortKey>("last_name");
   const [sortDir,setSortDir]=useState<"asc"|"desc">("asc");
+  const [fSection,setFSection]=useState("");
+  const [fLevel,setFLevel]=useState("");
+  const [fField,setFField]=useState("");
   const [view,setView]=useState<"active"|"inactive"|"all">("active");
   const [open,setOpen]=useState(false);
-  const [form,setForm]=useState({first_name:"",last_name:"",email:"",phone:"",locality:"",function_name:"",status:"active"});
+  // Champs demandés pour chaque membre. "locality" = Adresse, "function_name" = Fonction dans la section.
+  type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[]};
+  const FIELD_DEFS:FieldDef[]=[
+    {key:"first_name",label:"Prénom",required:true},
+    {key:"last_name",label:"Nom",required:true},
+    {key:"email",label:"Email",required:true,type:"email"},
+    {key:"phone",label:"Téléphone",required:true,type:"tel"},
+    {key:"locality",label:"Adresse",required:true},
+    {key:"study_field",label:"Filière"},
+    {key:"study_level",label:"Niveau d’étude",options:["L1","L2","L3","M1","M2","Doctorat","Autre"]},
+    {key:"section_id",label:"Section"},
+    {key:"function_name",label:"Fonction dans la section"},
+    {key:"join_year",label:"Année d’adhésion",type:"number"},
+    {key:"guardian_phone",label:"Numéro du tuteur",type:"tel"},
+    {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
+  ];
+  const [sections,setSections]=useState<{id:string;name:string}[]>([]);
+  useEffect(()=>{supabase.from("sections").select("id,name").eq("is_active",true).order("name").then(({data})=>setSections((data||[]) as {id:string;name:string}[]));},[]);
+  const sectionName=(id:string|null)=>sections.find(x=>x.id===id)?.name||null;
+  const blankForm=():Record<string,string>=>({...Object.fromEntries(FIELD_DEFS.map(f=>[f.key,""])),status:"active"});
+  const [form,setForm]=useState<Record<string,string>>(blankForm());
+  const [photoFile,setPhotoFile]=useState<File|null>(null);
+  const [photoErr,setPhotoErr]=useState("");
+  const pickPhoto=(f:File|undefined)=>{
+    setPhotoErr("");
+    if(!f){setPhotoFile(null);return;}
+    if(!f.type.startsWith("image/")){setPhotoErr("Choisis une image (JPG, PNG…).");return;}
+    if(f.size>3*1024*1024){setPhotoErr("Photo trop lourde (3 Mo maximum).");return;}
+    setPhotoFile(f);
+  };
+  async function uploadPhoto(f:File):Promise<string|null>{
+    const ext=(f.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"");
+    const path=`${crypto.randomUUID()}.${ext||"jpg"}`;
+    const {error}=await supabase.storage.from("member-photos").upload(path,f,{contentType:f.type});
+    if(error){alert("Photo non enregistrée : "+error.message+"\n(Lance supabase/member_fields.sql dans Supabase.)");return null;}
+    return supabase.storage.from("member-photos").getPublicUrl(path).data.publicUrl;
+  }
+  const PhotoField=({current}:{current?:string|null})=><label>Photo
+    <input type="file" accept="image/*" onChange={e=>pickPhoto(e.target.files?.[0])}/>
+    {photoFile?<span className="muted" style={{fontSize:12}}>{photoFile.name}</span>:current?<img src={current} alt="" style={{width:56,height:56,borderRadius:"50%",objectFit:"cover",marginTop:6}}/>:null}
+    {photoErr&&<span style={{color:"#b42318",fontSize:12}}>{photoErr}</span>}
+  </label>;
+  const renderField=(f:FieldDef,values:Record<string,string>,set:(v:Record<string,string>)=>void)=>
+    <label key={f.key}>{f.label}{f.required?" *":""}
+      {f.key==="section_id"
+        ?<select value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}><option value="">—</option>{sections.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        :f.options
+        ?<select required={f.required} value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}><option value="">—</option>{f.options.map(o=><option key={o} value={o}>{o}</option>)}</select>
+        :<input required={f.required} type={f.type||"text"} {...(f.type==="number"?{min:1990,max:2100}:{})} value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}/>}
+    </label>;
+  const toPayload=(v:Record<string,string>)=>{
+    const n=(x:string)=>(x??"").trim()||null;
+    return {
+      first_name:v.first_name.trim(),last_name:v.last_name.trim(),email:n(v.email),phone:n(v.phone),locality:n(v.locality),
+      study_field:n(v.study_field),study_level:n(v.study_level),section_id:n(v.section_id),function_name:n(v.function_name),
+      join_year:v.join_year?Number(v.join_year):null,guardian_phone:n(v.guardian_phone),blood_group:n(v.blood_group),
+    };
+  };
 
   // ----- Fiche détaillée d'un membre -----
   type Own={status:string;check_in_at:string|null;method:string};
@@ -27,14 +87,13 @@ export default function Members() {
   const [stats,setStats]=useState<StatsData|null>(null);
   const [statsErr,setStatsErr]=useState(false);
   const [own,setOwn]=useState<Record<string,Own>|null>(null);
-  type EditForm={first_name:string;last_name:string;gender:string;birth_date:string;phone:string;email:string;locality:string;function_name:string;status:string;notes:string};
   const [editing,setEditing]=useState(false);
   const [cardOpen,setCardOpen]=useState(false);
-  const [edit,setEdit]=useState<EditForm>({first_name:"",last_name:"",gender:"",birth_date:"",phone:"",email:"",locality:"",function_name:"",status:"active",notes:""});
+  const [edit,setEdit]=useState<Record<string,string>>({...blankForm(),gender:"",birth_date:"",notes:""});
   useEffect(()=>{loadStats().then(setStats).catch(()=>setStatsErr(true));},[]);
 
   async function openDetail(m:Member){
-    setDetail(m);setOwn(null);setEditing(false);
+    setDetail(m);setOwn(null);setEditing(false);setPhotoFile(null);setPhotoErr("");
     const {data}=await supabase.from("attendance").select("activity_id,status,check_in_at,method").eq("member_id",m.id);
     const map:Record<string,Own>={};
     ((data||[]) as (Own&{activity_id:string})[]).forEach(r=>{map[r.activity_id]=r;});
@@ -42,18 +101,22 @@ export default function Members() {
   }
 
   function startEdit(m:Member){
-    setEdit({first_name:m.first_name,last_name:m.last_name,gender:m.gender||"",birth_date:m.birth_date||"",phone:m.phone||"",email:m.email||"",locality:m.locality||"",function_name:m.function_name||"",status:m.status,notes:m.notes||""});
-    setEditing(true);
+    const x=m as unknown as Record<string,unknown>;
+    const v=blankForm();
+    FIELD_DEFS.forEach(f=>{v[f.key]=x[f.key]==null?"":String(x[f.key]);});
+    setEdit({...v,gender:m.gender||"",birth_date:m.birth_date||"",status:m.status,notes:m.notes||""});
+    setPhotoFile(null);setPhotoErr("");setEditing(true);
   }
   async function saveEdit(e:FormEvent){
     e.preventDefault();
     if(!detail)return;
     const n=(v:string)=>v.trim()||null;
-    const payload={first_name:edit.first_name.trim(),last_name:edit.last_name.trim(),gender:n(edit.gender),birth_date:edit.birth_date||null,phone:n(edit.phone),email:n(edit.email),locality:n(edit.locality),function_name:n(edit.function_name),status:edit.status,notes:n(edit.notes)};
+    const payload:Record<string,unknown>={...toPayload(edit),gender:n(edit.gender),birth_date:edit.birth_date||null,status:edit.status,notes:n(edit.notes)};
+    if(photoFile){const url=await uploadPhoto(photoFile);if(!url)return;payload.photo_url=url;}
     const {data,error}=await supabase.from("members").update(payload).eq("id",detail.id).select();
     if(error){alert("Impossible de modifier le membre : "+error.message);return;}
     if(!data||!data.length){alert("Modification refusée : seuls les administrateurs et les responsables peuvent modifier un membre.");return;}
-    setDetail(data[0] as Member);setEditing(false);load();
+    setDetail(data[0] as Member);setEditing(false);setPhotoFile(null);load();
   }
 
   const tokenOf=(m:Member)=>(m as Member&{qr_token?:string|null}).qr_token||null;
@@ -75,6 +138,7 @@ export default function Members() {
     return {list,present,absent:list.length-present,rate:list.length?Math.round(present/list.length*100):0,streak};
   },[detail,stats,own]);
 
+  const ext=(m:Member,k:string)=>{const v=(m as unknown as Record<string,unknown>)[k];return v==null||v===""?null:String(v);};
   const ageOf=(d:string|null)=>{if(!d)return null;const b=new Date(d),n=new Date();let a=n.getFullYear()-b.getFullYear();if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate()))a--;return a>=0&&a<120?a:null;};
   const waLink=(p:string)=>{const d=p.replace(/\D/g,"");return `https://wa.me/${d.length===9?"221"+d:d}`;};
   const rateColor=(r:number)=>r>=70?"#18794e":r>=40?"#b54708":"#b42318";
@@ -89,9 +153,11 @@ export default function Members() {
 
   async function add(e:FormEvent){
     e.preventDefault();
-    const {error}=await supabase.from("members").insert(form);
+    const payload:Record<string,unknown>={...toPayload(form),status:"active"};
+    if(photoFile){const url=await uploadPhoto(photoFile);if(!url)return;payload.photo_url=url;}
+    const {error}=await supabase.from("members").insert(payload);
     if(error){alert("Impossible d'enregistrer le membre : "+error.message);return;}
-    setForm({first_name:"",last_name:"",email:"",phone:"",locality:"",function_name:"",status:"active"});
+    setForm(blankForm());setPhotoFile(null);setPhotoErr("");
     setOpen(false); load();
   }
   async function setStatus(m:Member,status:"active"|"inactive"){
@@ -112,13 +178,13 @@ export default function Members() {
   }
 
   // ----- Import Excel / CSV -----
-  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;function_name:string|null};
+  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;function_name:string|null;study_field:string|null;study_level:string|null;section_id:string|null;join_year:number|null;guardian_phone:string|null;blood_group:string|null};
   const [imp,setImp]=useState<{rows:Imp[];dup:number;bad:number;homonyms:number;review:Imp[]}|null>(null);
   const [includeReview,setIncludeReview]=useState(false);
   const [impOpen,setImpOpen]=useState(false);
   const [impMsg,setImpMsg]=useState("");
   const norm=(v:unknown)=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
-  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","ville","quartier"],function_name:["fonction","poste","role"]};
+  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","ville","quartier"],function_name:["fonction","poste","role","fonctiondanslasection"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],section_id:["sectiondebase","section"],join_year:["anneedadhesion","anneeadhesion","adhesion"],guardian_phone:["numerodututeur","tuteur","telephonedututeur"],blood_group:["groupesanguin","groupe","sang"]};
   const toDate=(v:unknown)=>{if(!v)return null;if(v instanceof Date&&!isNaN(+v))return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);const t=String(v).trim();const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;return /^\d{4}-\d{2}-\d{2}$/.test(t)?t:null;};
   async function readFile(f:File){
     setImpMsg("");setImp(null);
@@ -136,7 +202,7 @@ export default function Members() {
         const first=String(g("first_name")).trim(),last=String(g("last_name")).trim();
         if(!first||!last){bad++;return;}
         const t=(k:string)=>String(g(k)).trim()||null;
-        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),function_name:t("function_name")};
+        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),function_name:t("function_name"),study_field:t("study_field"),study_level:t("study_level"),section_id:(()=>{const nm=norm(g("section_id"));return nm?(sections.find(x=>norm(x.name)===nm)?.id||null):null;})(),join_year:(()=>{const y=parseInt(String(g("join_year")),10);return isNaN(y)?null:y;})(),guardian_phone:t("guardian_phone"),blood_group:t("blood_group")};
         const id=`${norm(first)}|${norm(last)}`;
         const mine=phoneKey(row.phone);
         const known=byName.get(id);
@@ -163,7 +229,7 @@ export default function Members() {
     setImpMsg(`${toAdd.length} membre(s) ajouté(s).`);setImp(null);setIncludeReview(false);load();
   }
   function template(){
-    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Sexe","Date de naissance","Localité","Fonction"],["Awa","Fall","","770000000","F","01/01/2005","Saint-Louis",""]]);
+    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Adresse","Filière","Niveau d’étude","Section","Fonction dans la section","Année d’adhésion","Numéro du tuteur","Groupe sanguin"],["Awa","Fall","awa@example.com","770000000","Saint-Louis","Informatique","L2","Section A","Membre",2025,"780000000","O+"]]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Membres");XLSX.writeFile(wb,"modele-import-membres.xlsx");
   }
 
@@ -173,10 +239,24 @@ export default function Members() {
   const sortBy=(k:SortKey)=>{if(sortKey===k)setSortDir(d=>d==="asc"?"desc":"asc");else{setSortKey(k);setSortDir("asc");}};
   const arrow=(k:SortKey)=>sortKey===k?(sortDir==="asc"?" ▲":" ▼"):"";
   const thSort={cursor:"pointer",userSelect:"none"} as const;
-  const filtered=members.filter(m=>(view==="all"||m.status===view)&&`${m.first_name} ${m.last_name} ${m.phone||""} ${m.email||""}`.toLowerCase().includes(q.toLowerCase()));
+  const fields=[...new Set(members.map(m=>(m.study_field||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr"));
+  const filtered=members.filter(m=>(view==="all"||m.status===view)&&(!fSection||(fSection==="__none"?!m.section_id:m.section_id===fSection))&&(!fLevel||m.study_level===fLevel)&&(!fField||(m.study_field||"").trim()===fField)&&`${m.first_name} ${m.last_name} ${m.phone||""} ${m.email||""}`.toLowerCase().includes(q.toLowerCase()));
   const sorted=[...filtered].sort((a,b)=>{const r=collator.compare(sortValue(a),sortValue(b));return sortDir==="asc"?r:-r;});
 
-  return <><PageHeader title="Membres" description={`${counts.active} membre(s) actif(s)${counts.inactive?` · ${counts.inactive} ancien(s) membre(s) masqué(s)`:""}.`} action={<div className="att-actions"><button className="secondary" onClick={()=>{setImpOpen(true);setImp(null);setImpMsg("");}}><Upload size={18}/> Importer</button><button className="primary" onClick={()=>setOpen(true)}><Plus size={18}/> Ajouter un membre</button></div>}/>
+  function exportExcel(){
+    const rows=sorted.map(m=>({
+      "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Adresse":m.locality||"",
+      "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","Section":sectionName(m.section_id)||"","Fonction dans la section":m.function_name||"",
+      "Année d’adhésion":m.join_year??"","Numéro du tuteur":m.guardian_phone||"","Groupe sanguin":m.blood_group||"",
+      "Sexe":m.gender||"","Date de naissance":m.birth_date||"","Statut":m.status==="active"?"Actif":"Ancien membre","Photo (lien)":m.photo_url||"","Notes":m.notes||"","Créé le":(m.created_at||"").slice(0,10),
+    }));
+    const ws=XLSX.utils.json_to_sheet(rows);
+    ws["!cols"]=Object.keys(rows[0]||{}).map(k=>({wch:Math.max(12,k.length+2)}));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Membres");
+    XLSX.writeFile(wb,`membres-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  return <><PageHeader title="Membres" description={`${counts.active} membre(s) actif(s)${counts.inactive?` · ${counts.inactive} ancien(s) membre(s) masqué(s)`:""}.`} action={<div className="att-actions"><button className="secondary" disabled={!sorted.length} onClick={exportExcel}><Download size={18}/> Exporter</button><button className="secondary" onClick={()=>{setImpOpen(true);setImp(null);setImpMsg("");}}><Upload size={18}/> Importer</button><button className="primary" onClick={()=>setOpen(true)}><Plus size={18}/> Ajouter un membre</button></div>}/>
     <div className="toolbar"><div className="input-icon search"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher…"/></div>
       <select aria-label="Trier les membres" value={`${sortKey}:${sortDir}`} onChange={e=>{const [k,d]=e.target.value.split(":");setSortKey(k as SortKey);setSortDir(d as "asc"|"desc");}}>
         <option value="last_name:asc">Trier : Nom (A → Z)</option>
@@ -185,16 +265,21 @@ export default function Members() {
         <option value="first_name:desc">Trier : Prénom (Z → A)</option>
         <option value="member_number:asc">Trier : N° de membre</option>
         <option value="created_at:desc">Trier : Plus récents d'abord</option>
-      </select></div>
+      </select>
+      <select aria-label="Filtrer par section" value={fSection} onChange={e=>setFSection(e.target.value)}><option value="">Toutes les sections</option>{sections.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}<option value="__none">Sans section</option></select>
+      <select aria-label="Filtrer par niveau" value={fLevel} onChange={e=>setFLevel(e.target.value)}><option value="">Tous les niveaux</option>{["L1","L2","L3","M1","M2","Doctorat","Autre"].map(l=><option key={l} value={l}>{l}</option>)}</select>
+      <select aria-label="Filtrer par filière" value={fField} onChange={e=>setFField(e.target.value)}><option value="">Toutes les filières</option>{fields.map(f=><option key={f} value={f}>{f}</option>)}</select>
+      {(fSection||fLevel||fField)&&<button type="button" className="secondary" onClick={()=>{setFSection("");setFLevel("");setFField("");}}>Effacer les filtres</button>}
+      </div>
     <div className="type-tabs">{([["active",`Membres actifs (${counts.active})`],["inactive",`Anciens membres (${counts.inactive})`],["all","Tous"]] as ["active"|"inactive"|"all",string][]).map(([k,l])=><button type="button" key={k} className={`type-tab${view===k?" on":""}`} onClick={()=>setView(k)}>{l}</button>)}</div>
     <div className="panel table-wrap"><table><thead><tr><th style={thSort} onClick={()=>sortBy("first_name")}>Prénom{arrow("first_name")}</th><th style={thSort} onClick={()=>sortBy("last_name")}>Nom{arrow("last_name")}</th><th>Téléphone</th><th>Statut</th><th>Actions et carte</th></tr></thead>
-    <tbody>{sorted.map(m=><tr key={m.id} onClick={()=>openDetail(m)} style={{cursor:"pointer",opacity:m.status==="inactive"?.6:1}} title="Voir la fiche du membre"><td><span style={{display:"inline-flex",alignItems:"center",gap:10}}><Avatar first={m.first_name} last={m.last_name}/>{m.first_name}</span></td><td>{m.last_name}</td><td>{m.phone||"—"}</td><td><StatusBadge kind={m.status==="active"?"member":"former"}/></td><td><button className="icon-btn" title="Carte de membre (QR)" onClick={e=>{e.stopPropagation();openDetail(m);setCardOpen(true);}}><QrCode size={17}/></button><button className="icon-btn" title="Voir la fiche" onClick={e=>{e.stopPropagation();openDetail(m);}}><UserRoundPen size={17}/></button><button className="icon-btn" title={m.status==="active"?"Masquer (ancien membre)":"Réactiver"} onClick={e=>{e.stopPropagation();setStatus(m,m.status==="active"?"inactive":"active");}}>{m.status==="active"?<UserX size={17}/>:<UserCheck size={17}/>}</button><button className="icon-btn danger" title="Supprimer" onClick={e=>{e.stopPropagation();remove(m.id);}}><Trash2 size={17}/></button></td></tr>)}</tbody></table>{!filtered.length&&<EmptyState icon={q?"search":"members"} title={view==="inactive"&&!q?"Aucun ancien membre masqué":q?"Aucun membre trouvé":"Aucun membre pour le moment"} hint={q?"Essaie un autre nom ou numéro.":view==="inactive"?undefined:"Ajoute le premier membre ou importe un fichier Excel."} actions={q?[{label:"Effacer la recherche",onClick:()=>setQ(""),variant:"secondary"}]:view==="inactive"?undefined:[{label:"Ajouter un membre",onClick:()=>setOpen(true)},{label:"Importer un fichier",onClick:()=>{setImpOpen(true);setImp(null);setImpMsg("");},variant:"secondary"}]}/>}</div>
+    <tbody>{sorted.map(m=><tr key={m.id} onClick={()=>openDetail(m)} style={{cursor:"pointer",opacity:m.status==="inactive"?.6:1}} title="Voir la fiche du membre"><td><span style={{display:"inline-flex",alignItems:"center",gap:10}}><Avatar first={m.first_name} last={m.last_name} photoUrl={m.photo_url}/>{m.first_name}</span></td><td>{m.last_name}</td><td>{m.phone||"—"}</td><td><StatusBadge kind={m.status==="active"?"member":"former"}/></td><td><button className="icon-btn" title="Carte de membre (QR)" onClick={e=>{e.stopPropagation();openDetail(m);setCardOpen(true);}}><QrCode size={17}/></button><button className="icon-btn" title="Voir la fiche" onClick={e=>{e.stopPropagation();openDetail(m);}}><UserRoundPen size={17}/></button><button className="icon-btn" title={m.status==="active"?"Masquer (ancien membre)":"Réactiver"} onClick={e=>{e.stopPropagation();setStatus(m,m.status==="active"?"inactive":"active");}}>{m.status==="active"?<UserX size={17}/>:<UserCheck size={17}/>}</button><button className="icon-btn danger" title="Supprimer" onClick={e=>{e.stopPropagation();remove(m.id);}}><Trash2 size={17}/></button></td></tr>)}</tbody></table>{!filtered.length&&<EmptyState icon={q?"search":"members"} title={view==="inactive"&&!q?"Aucun ancien membre masqué":q?"Aucun membre trouvé":"Aucun membre pour le moment"} hint={q?"Essaie un autre nom ou numéro.":view==="inactive"?undefined:"Ajoute le premier membre ou importe un fichier Excel."} actions={q?[{label:"Effacer la recherche",onClick:()=>setQ(""),variant:"secondary"}]:view==="inactive"?undefined:[{label:"Ajouter un membre",onClick:()=>setOpen(true)},{label:"Importer un fichier",onClick:()=>{setImpOpen(true);setImp(null);setImpMsg("");},variant:"secondary"}]}/>}</div>
     {open&&<div className="modal-backdrop"><form className="modal" onSubmit={add}><div className="modal-head"><h2>Nouveau membre</h2><button type="button" className="icon-btn" onClick={()=>setOpen(false)}>×</button></div>
-      <div className="form-grid">{[["first_name","Prénom"],["last_name","Nom"],["email","E-mail"],["phone","Téléphone"],["locality","Localité"],["function_name","Fonction"]].map(([k,l])=><label key={k}>{l}<input required={k==="first_name"||k==="last_name"} value={form[k as keyof typeof form]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}</div>
+      <div className="form-grid">{FIELD_DEFS.map(f=>renderField(f,form,setForm))}<PhotoField/></div>
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setOpen(false)}>Annuler</button><button className="primary">Enregistrer</button></div>
     </form></div>}
     {impOpen&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><h2>Importer des membres</h2><button type="button" className="icon-btn" onClick={()=>setImpOpen(false)}>×</button></div>
-      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom</b> (obligatoires), Email, Téléphone, Sexe, Date de naissance, Localité, Fonction. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
+      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom</b> (obligatoires), Email, Téléphone, Adresse, Filière, Niveau d’étude, Section, Fonction dans la section, Année d’adhésion, Numéro du tuteur, Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);}}/>
       <p style={{marginBottom:0}}><button type="button" className="secondary" onClick={template}>Télécharger le modèle</button></p></div>
       {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom/prénom ignorée(s)</div>}
@@ -207,11 +292,14 @@ export default function Members() {
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setImpOpen(false)}>Fermer</button><button type="button" className="primary" disabled={!imp||!(imp.rows.length+(includeReview?imp.review.length:0))} onClick={confirmImport}>Ajouter {imp?imp.rows.length+(includeReview?imp.review.length:0):0} membre(s)</button></div>
     </div></div>}
     {detail&&<div className="modal-backdrop" onClick={()=>setDetail(null)}><div className="modal" style={{width:"min(760px,100%)",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-      <div className="modal-head"><div style={{display:"flex",alignItems:"center",gap:12}}><Avatar first={detail.first_name} last={detail.last_name} size={48}/><div><h2 style={{margin:0}}>{detail.first_name} {detail.last_name}</h2><div style={{marginTop:6,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><span className="muted">N° {detail.member_number}</span><StatusBadge kind={detail.status==="active"?"member":"former"}/></div></div></div><button type="button" className="icon-btn" onClick={()=>setDetail(null)}>×</button></div>
+      <div className="modal-head"><div style={{display:"flex",alignItems:"center",gap:12}}><Avatar first={detail.first_name} last={detail.last_name} size={48} photoUrl={detail.photo_url}/><div><h2 style={{margin:0}}>{detail.first_name} {detail.last_name}</h2><div style={{marginTop:6,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><span className="muted">N° {detail.member_number}</span><StatusBadge kind={detail.status==="active"?"member":"former"}/></div></div></div><button type="button" className="icon-btn" onClick={()=>setDetail(null)}>×</button></div>
 
       {detail.status==="inactive"&&<div className="error-box" style={{marginBottom:14,background:"#fff8e6",borderColor:"#f5d78a",color:"#8a5a00"}}>Ancien membre : masqué, non compté dans les statistiques, les relances ni les listes de présence. Son historique est conservé.</div>}
       {editing?(<form onSubmit={saveEdit}>
-        <div className="form-grid">{([["first_name","Prénom",true],["last_name","Nom",true],["gender","Sexe (M ou F)",false],["birth_date","Date de naissance",false],["phone","Téléphone",false],["email","E-mail",false],["locality","Localité",false],["function_name","Fonction",false]] as [keyof EditForm,string,boolean][]).map(([k,l,req])=><label key={k}>{l}<input required={req} type={k==="birth_date"?"date":k==="email"?"email":"text"} value={edit[k]} onChange={e=>setEdit({...edit,[k]:e.target.value})}/></label>)}
+        <div className="form-grid">{FIELD_DEFS.map(f=>renderField(f,edit,setEdit))}
+          <label>Sexe (M ou F)<input value={edit.gender} onChange={e=>setEdit({...edit,gender:e.target.value})}/></label>
+          <label>Date de naissance<input type="date" value={edit.birth_date} onChange={e=>setEdit({...edit,birth_date:e.target.value})}/></label>
+          <PhotoField current={detail.photo_url}/>
           <label>Statut<select value={edit.status} onChange={e=>setEdit({...edit,status:e.target.value})}><option value="active">Actif</option><option value="inactive">Ancien membre (masqué)</option></select></label>
           <label>Notes<textarea rows={3} value={edit.notes} onChange={e=>setEdit({...edit,notes:e.target.value})}/></label>
         </div>
@@ -221,12 +309,18 @@ export default function Members() {
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>{([
         ["Prénom",detail.first_name],
         ["Nom",detail.last_name],
+        ["E-mail",detail.email],
+        ["Téléphone",detail.phone],
+        ["Adresse",detail.locality],
+        ["Filière",ext(detail,"study_field")],
+        ["Niveau d’étude",ext(detail,"study_level")],
+        ["Section",sectionName(detail.section_id)],
+        ["Fonction dans la section",detail.function_name],
+        ["Année d’adhésion",ext(detail,"join_year")],
+        ["Numéro du tuteur",ext(detail,"guardian_phone")],
+        ["Groupe sanguin",ext(detail,"blood_group")],
         ["Sexe",detail.gender==="F"?"Féminin":detail.gender==="M"?"Masculin":detail.gender],
         ["Date de naissance",detail.birth_date?`${fmtDate(detail.birth_date)}${ageOf(detail.birth_date)!==null?` (${ageOf(detail.birth_date)} ans)`:""}`:null],
-        ["Téléphone",detail.phone],
-        ["E-mail",detail.email],
-        ["Localité",detail.locality],
-        ["Fonction",detail.function_name],
         ["Membre depuis",fmtDate(detail.created_at)],
       ] as [string,string|null][]).map(([l,v])=><div key={l}><div style={{fontSize:12,color:"#667085"}}>{l}</div><div style={{fontWeight:600,wordBreak:"break-word"}}>{v||"—"}</div></div>)}</div>
       {detail.notes&&<div className="panel" style={{marginTop:14,marginBottom:0}}><div style={{fontSize:12,color:"#667085"}}>Notes</div><div>{detail.notes}</div></div>}
@@ -265,7 +359,7 @@ export default function Members() {
       return <div className="modal-backdrop" onClick={()=>setCardOpen(false)}><div className="modal print-area" style={{width:"min(420px,100%)",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
         <div className="modal-head no-print"><h2>Carte de membre</h2><button type="button" className="icon-btn" onClick={()=>setCardOpen(false)}>×</button></div>
         {!token?<div className="error-box">Carte indisponible : lancez d'abord member_cards.sql dans Supabase.</div>:<>
-          <MemberCardView firstName={detail.first_name} lastName={detail.last_name} memberNumber={detail.member_number} token={token}/>
+          <MemberCardView firstName={detail.first_name} lastName={detail.last_name} memberNumber={detail.member_number} token={token} photoUrl={detail.photo_url}/>
           <p className="muted no-print" style={{fontSize:12,wordBreak:"break-all",margin:"12px 0"}}>{link}</p>
           <div className="no-print" style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
             {detail.phone&&<a className="primary" style={{textDecoration:"none"}} href={`${waLink(detail.phone)}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"><MessageCircle size={16}/> Envoyer par WhatsApp</a>}

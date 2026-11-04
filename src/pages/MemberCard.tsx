@@ -10,6 +10,7 @@ type Card = {
   first_name?: string;
   last_name?: string;
   member_number?: string;
+  photo_url?: string | null;
 };
 
 // Page publique ouverte depuis le lien envoyé au membre : elle affiche sa carte et son QR personnel.
@@ -46,6 +47,7 @@ export default function MemberCard() {
               lastName={card.last_name ?? ""}
               memberNumber={card.member_number ?? ""}
               token={token}
+              photoUrl={card.photo_url}
             />
             <p className="muted" style={{ fontSize: 13, margin: "18px 0 0" }}>
               Présente ce QR code à chaque activité. Monte la luminosité de ton écran et ne le partage avec personne.

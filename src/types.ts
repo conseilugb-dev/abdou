@@ -28,6 +28,11 @@ export interface Member {
   locality: string | null;
   function_name: string | null;
   photo_url: string | null;
+  study_field: string | null;
+  study_level: string | null;
+  join_year: number | null;
+  guardian_phone: string | null;
+  blood_group: string | null;
   status: MemberStatus;
   notes: string | null;
   created_at: string;
