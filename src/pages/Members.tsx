@@ -23,17 +23,17 @@ export default function Members() {
   const [view,setView]=useState<"active"|"inactive"|"all">("active");
   const [open,setOpen]=useState(false);
   const UFRS=["SAT","SJP","SEFS","SEG","S2ATA","CRAC","IPSL","2S","Formation","LSH","Autre"];
-  // Champs demandés pour chaque membre. "locality" = Adresse au campus, "ufr" = UFR.
+  // Champs demandés pour chaque membre. "locality" = Logement au campus, "room_number" = Numéro de chambre, "ufr" = UFR.
   type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[]};
   const FIELD_DEFS:FieldDef[]=[
     {key:"first_name",label:"Prénom",required:true},
     {key:"last_name",label:"Nom",required:true},
     {key:"email",label:"Email",required:true,type:"email"},
     {key:"phone",label:"Téléphone",required:true,type:"tel"},
-    {key:"locality",label:"Adresse au campus",required:true},
+    {key:"locality",label:"Logement au campus",required:true},
+    {key:"room_number",label:"Numéro de chambre"},
     {key:"study_field",label:"Filière"},
-    {key:"study_level",label:"Niveau d’étude",options:["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Docteur","Autre"]},
-    {key:"ufr",label:"UFR",options:UFRS},
+    {key:"study_level",label:"Niveau d’étude",options:["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Docteur","Autre"]},    {key:"ufr",label:"UFR",options:UFRS},
     {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
   ];
   const blankForm=():Record<string,string>=>({...Object.fromEntries(FIELD_DEFS.map(f=>[f.key,""])),status:"active"});
@@ -68,7 +68,7 @@ export default function Members() {
   const toPayload=(v:Record<string,string>)=>{
     const n=(x:string)=>(x??"").trim()||null;
     return {
-      first_name:v.first_name.trim(),last_name:v.last_name.trim(),email:n(v.email),phone:n(v.phone),locality:n(v.locality),
+      first_name:v.first_name.trim(),last_name:v.last_name.trim(),email:n(v.email),phone:n(v.phone),locality:n(v.locality),room_number:n(v.room_number),
       study_field:n(v.study_field),study_level:n(v.study_level),ufr:n(v.ufr),
       blood_group:n(v.blood_group),
     };
@@ -173,13 +173,13 @@ export default function Members() {
   }
 
   // ----- Import Excel / CSV -----
-  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;study_field:string|null;study_level:string|null;ufr:string|null;blood_group:string|null};
+  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;room_number:string|null;study_field:string|null;study_level:string|null;ufr:string|null;blood_group:string|null};
   const [imp,setImp]=useState<{rows:Imp[];dup:number;bad:number;homonyms:number;review:Imp[]}|null>(null);
   const [includeReview,setIncludeReview]=useState(false);
   const [impOpen,setImpOpen]=useState(false);
   const [impMsg,setImpMsg]=useState("");
   const norm=(v:unknown)=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
-  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["localite","adresse","adresseaucampus","ville","quartier"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],ufr:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"]};
+  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["logementaucampus","logement","adresseaucampus","adresse","localite","ville","quartier"],room_number:["numerodechambre","numerochambre","chambre","nchambre"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],ufr:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"]};
   const toDate=(v:unknown)=>{if(!v)return null;if(v instanceof Date&&!isNaN(+v))return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);const t=String(v).trim();const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;return /^\d{4}-\d{2}-\d{2}$/.test(t)?t:null;};
   async function readFile(f:File){
     setImpMsg("");setImp(null);
@@ -197,7 +197,7 @@ export default function Members() {
         const first=String(g("first_name")).trim(),last=String(g("last_name")).trim();
         const t=(k:string)=>String(g(k)).trim()||null;
         if(!first||!last||!t("phone")){bad++;return;}
-        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group")};
+        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),room_number:t("room_number"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group")};
         const id=`${norm(first)}|${norm(last)}`;
         const mine=phoneKey(row.phone);
         const known=byName.get(id);
@@ -224,7 +224,7 @@ export default function Members() {
     setImpMsg(`${toAdd.length} membre(s) ajouté(s).`);setImp(null);setIncludeReview(false);load();
   }
   function template(){
-    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Adresse au campus","Filière","Niveau d’étude","UFR","Groupe sanguin"],["Awa","Fall","awa@example.com","770000000","Pavillon A","Informatique","L2","UFR SAT","O+"]]);
+    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Logement au campus","Numéro de chambre","Filière","Niveau d’étude","UFR","Groupe sanguin"],["Awa","Fall","awa@example.com","770000000","Pavillon A","12","Informatique","L2","UFR SAT","O+"]]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Membres");XLSX.writeFile(wb,"modele-import-membres.xlsx");
   }
 
@@ -240,7 +240,7 @@ export default function Members() {
 
   function exportExcel(){
     const rows=sorted.map(m=>({
-      "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Adresse au campus":m.locality||"",
+      "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Logement au campus":m.locality||"","Numéro de chambre":m.room_number||"",
       "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","UFR":m.ufr||"",
       "Groupe sanguin":m.blood_group||"",
       "Sexe":m.gender||"","Date de naissance":m.birth_date||"","Statut":m.status==="active"?"Actif":"Ancien membre","Photo (lien)":m.photo_url||"","Notes":m.notes||"","Créé le":(m.created_at||"").slice(0,10),
@@ -274,7 +274,7 @@ export default function Members() {
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setOpen(false)}>Annuler</button><button className="primary">Enregistrer</button></div>
     </form></div>}
     {impOpen&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><h2>Importer des membres</h2><button type="button" className="icon-btn" onClick={()=>setImpOpen(false)}>×</button></div>
-      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Adresse au campus, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
+      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Logement au campus, Numéro de chambre, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);}}/>
       <p style={{marginBottom:0}}><button type="button" className="secondary" onClick={template}>Télécharger le modèle</button></p></div>
       {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom, prénom ou téléphone ignorée(s)</div>}
@@ -306,7 +306,8 @@ export default function Members() {
         ["Nom",detail.last_name],
         ["E-mail",detail.email],
         ["Téléphone",detail.phone],
-        ["Adresse au campus",detail.locality],
+        ["Logement au campus",detail.locality],
+        ["Numéro de chambre",ext(detail,"room_number")],
         ["Filière",ext(detail,"study_field")],
         ["Niveau d’étude",ext(detail,"study_level")],
         ["UFR",detail.ufr],

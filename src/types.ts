@@ -27,6 +27,7 @@ export interface Member {
   gender: string | null;
   birth_date: string | null;
   locality: string | null;
+  room_number: string | null;
   function_name: string | null;
   photo_url: string | null;
   study_field: string | null;

@@ -13,6 +13,7 @@ alter table public.members add column if not exists blood_group    text;  -- Gro
 -- insert into public.sections (organization_id, name)
 -- select id, 'Section A' from public.organizations limit 1;
 
+alter table public.members add column if not exists room_number text; -- Numéro de chambre
 alter table public.members add column if not exists ufr text;  -- UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH, Autre)
 
 -- Reprise des anciennes sections quand leur nom correspond à une UFR
