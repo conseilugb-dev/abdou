@@ -32,7 +32,7 @@ export default function Members() {
     {key:"phone",label:"Téléphone",required:true,type:"tel"},
     {key:"locality",label:"Adresse au campus",required:true},
     {key:"study_field",label:"Filière"},
-    {key:"study_level",label:"Niveau d’étude",options:["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Autre"]},
+    {key:"study_level",label:"Niveau d’étude",options:["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Docteur","Autre"]},
     {key:"ufr",label:"UFR",options:UFRS},
     {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
   ];

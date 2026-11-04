@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { LockKeyhole, Mail, LogIn, KeyRound, QrCode, ClipboardCheck, Users } from "lucide-react";
+import { LockKeyhole, Mail, LogIn, KeyRound } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import Footer from "../components/Footer";
 
@@ -117,17 +117,6 @@ export default function Login() {
             <div>Comité INTER-UNIVERSITAIRE</div>
           </div>
 
-          <div className="auth-hero-rule" />
-
-          <p className="auth-hero-welcome">
-            Bienvenue. Gère tes membres, tes activités et tes présences en toute simplicité.
-          </p>
-
-          <ul className="auth-hero-features">
-            <li><QrCode size={18} /> Appel rapide par QR code</li>
-            <li><ClipboardCheck size={18} /> Suivi des présences et des absences</li>
-            <li><Users size={18} /> Cartes et fiches de membres</li>
-          </ul>
         </div>
       </aside>
 
