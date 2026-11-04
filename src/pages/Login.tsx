@@ -1,5 +1,5 @@
-import { FormEvent, useState } from "react";
-import { LockKeyhole, Mail, LogIn, KeyRound } from "lucide-react";
+import { FormEvent, KeyboardEvent, useState } from "react";
+import { LockKeyhole, UserRound, LogIn, Eye, EyeOff, TriangleAlert } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import Footer from "../components/Footer";
 
@@ -19,6 +19,11 @@ export default function Login() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+
+  const checkCaps = (e: KeyboardEvent<HTMLInputElement>) =>
+    setCapsLock(e.getModifierState("CapsLock"));
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -125,41 +130,66 @@ export default function Login() {
           <h1>Connexion</h1>
           <p className="auth-sub">Accède à l'espace membres</p>
 
-          <label htmlFor="login-email">
-            Identifiant
-          </label>
-
+          <label htmlFor="login-email">Identifiant ou e-mail</label>
           <div className="input-icon">
-            <Mail size={18} />
+            <UserRound size={18} />
             <input
               id="login-email"
               type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="username"
+              autoFocus
               required
-              placeholder="Ex. votre identifiant ou e-mail"
+              placeholder="Ton identifiant ou ton e-mail"
               autoCapitalize="none"
               autoCorrect="off"
+              spellCheck={false}
             />
           </div>
 
-          <label htmlFor="login-password">
-            Mot de passe
-          </label>
-
+          <div className="auth-label-row">
+            <label htmlFor="login-password">Mot de passe</label>
+            <button
+              type="button"
+              className="auth-link"
+              onClick={forgotPassword}
+              disabled={loading || resetLoading}
+            >
+              {resetLoading ? "Envoi en cours…" : "Mot de passe oublié ?"}
+            </button>
+          </div>
           <div className="input-icon">
             <LockKeyhole size={18} />
             <input
               id="login-password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyUp={checkCaps}
+              onKeyDown={checkCaps}
+              onBlur={() => setCapsLock(false)}
               autoComplete="current-password"
               required
               placeholder="Ton mot de passe"
             />
+            <button
+              type="button"
+              className="pw-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+              aria-pressed={showPassword}
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
+
+          {capsLock && (
+            <div className="caps-hint" role="status">
+              <TriangleAlert size={15} /> Verrouillage majuscules activé
+            </div>
+          )}
 
           {error && (
             <div className="error-box" role="alert">
@@ -178,20 +208,8 @@ export default function Login() {
             className="primary full"
             disabled={loading || resetLoading}
           >
-            <LogIn size={18} />
-            {loading ? "Connexion…" : "Se connecter"}
-          </button>
-
-          <button
-            type="button"
-            className="forgot-password"
-            onClick={forgotPassword}
-            disabled={loading || resetLoading}
-          >
-            <KeyRound size={16} />
-            {resetLoading
-              ? "Envoi en cours…"
-              : "Mot de passe oublié ?"}
+            {loading ? <span className="btn-spinner" aria-hidden="true" /> : <LogIn size={18} />}
+            {loading ? "Connexion en cours…" : "Se connecter"}
           </button>
 
           <Footer />
