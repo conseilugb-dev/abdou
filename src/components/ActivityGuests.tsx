@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import EmptyState from "./EmptyState";
 import { Trash2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
@@ -43,7 +44,7 @@ export default function ActivityGuests({
       .from("activity_guests")
       .select("id,first_name,last_name,created_at")
       .eq("activity_id", activity.id)
-      .order("last_name")
+      .order("first_name")
       .order("first_name");
     if (loadError) setError(friendly(loadError.message, loadError.code));
     else {
@@ -95,7 +96,7 @@ export default function ActivityGuests({
   }
 
   async function copyList() {
-    const text = guests.map((g, i) => `${i + 1}. ${g.last_name} ${g.first_name}`).join("\n");
+    const text = guests.map((g, i) => `${i + 1}. ${g.first_name} ${g.last_name}`).join("\n");
     try {
       await navigator.clipboard.writeText(`Invités — ${activity.name}\n${text}`);
       setCopied(true);
@@ -144,13 +145,13 @@ export default function ActivityGuests({
 
         <h3 style={{ margin: "22px 0 8px" }}>Liste ({guests.length})</h3>
         {loading && <p className="muted">Chargement…</p>}
-        {!loading && !guests.length && !error && <div className="empty" style={{ padding: "20px 0" }}>Aucun invité pour cette activité.</div>}
+        {!loading && !guests.length && !error && <EmptyState compact icon="guests" title="Aucun invité" hint="Ajoute les personnes extérieures à l'organisation ci-dessus." />}
 
         {guests.length > 0 && (
           <div className="att-list">
             {guests.map((g) => (
               <div className="att-row" key={g.id}>
-                <div className="att-name">{g.last_name} {g.first_name}</div>
+                <div className="att-name">{g.first_name} {g.last_name}</div>
                 <button type="button" className="icon-btn danger" title="Retirer" onClick={() => remove(g)}>
                   <Trash2 size={17} />
                 </button>

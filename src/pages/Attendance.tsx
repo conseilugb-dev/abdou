@@ -202,7 +202,7 @@ export default function Attendance() {
       const ra = rank(a.id), rb = rank(b.id);
       if (ra !== rb) return ra - rb;
       if (ra === 0) return scanTimes[a.id].localeCompare(scanTimes[b.id]);
-      return `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, "fr");
+      return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`, "fr");
     });
   }, [members, query, marks, scanTimes]);
 
@@ -359,7 +359,7 @@ export default function Attendance() {
                   <span className="att-name" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
                     <Avatar first={m.first_name} last={m.last_name} />
                     {scanOrder[m.id] ? <b style={{ marginRight: 8 }}>{scanOrder[m.id]}.</b> : null}
-                    {m.last_name} {m.first_name}
+                    {m.first_name} {m.last_name}
                     {scanTimes[m.id] && v === "Présent" && (
                       <small className="muted" style={{ marginLeft: 8 }}>
                         {new Date(scanTimes[m.id]).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}

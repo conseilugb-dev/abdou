@@ -4,6 +4,7 @@ import { CheckCircle2, Search } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import OrgHeader from "../components/OrgHeader";
 import Footer from "../components/Footer";
+import EmptyState from "../components/EmptyState";
 
 type State = "ok" | "early" | "late" | "cancelled";
 type Info = { found: boolean; name?: string; start?: string; state?: State };
@@ -201,18 +202,18 @@ export default function CheckIn() {
                       setError("");
                     }}
                   >
-                    {m.last_name} {m.first_name}
+                    {m.first_name} {m.last_name}
                   </button>
                 ))}
 
                 {query.trim() && !matches.length && (
-                  <p style={{ margin: "12px 0 0" }}>Aucun nom trouvé. Vérifie l'orthographe.</p>
+                  <EmptyState compact icon="search" title="Aucun nom trouvé" hint="Vérifie l'orthographe." />
                 )}
               </>
             ) : (
               <>
                 <p style={{ margin: "18px 0 0", fontWeight: 700, color: "#172033" }}>
-                  {chosen.last_name} {chosen.first_name}
+                  {chosen.first_name} {chosen.last_name}
                 </p>
                 <button
                   type="button"
