@@ -44,5 +44,3 @@ select public.refresh_activity_status();
 --    n'ouvre le site. Activez d'abord pg_cron : Database > Extensions > pg_cron,
 --    puis retirez les deux tirets devant la ligne suivante.
  select cron.schedule('refresh-activity-status', '*/10 * * * *', 'select public.refresh_activity_status()');
-
- 
