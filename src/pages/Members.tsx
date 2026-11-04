@@ -262,7 +262,7 @@ export default function Members() {
         <option value="created_at:desc">Trier : Plus récents d'abord</option>
       </select>
       <select aria-label="Filtrer par UFR" value={fSection} onChange={e=>setFSection(e.target.value)}><option value="">Toutes les UFR</option>{UFRS.map(x=><option key={x} value={x}>{x}</option>)}<option value="__none">Sans UFR</option></select>
-      <select aria-label="Filtrer par niveau" value={fLevel} onChange={e=>setFLevel(e.target.value)}><option value="">Tous les niveaux</option>{["L1","L2","L3","M1","M2","Doctorat","Autre"].map(l=><option key={l} value={l}>{l}</option>)}</select>
+      <select aria-label="Filtrer par niveau" value={fLevel} onChange={e=>setFLevel(e.target.value)}><option value="">Tous les niveaux</option>{["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Docteur","Autre"].map(l=><option key={l} value={l}>{l}</option>)}</select>
       <select aria-label="Filtrer par filière" value={fField} onChange={e=>setFField(e.target.value)}><option value="">Toutes les filières</option>{fields.map(f=><option key={f} value={f}>{f}</option>)}</select>
       {(fSection||fLevel||fField)&&<button type="button" className="secondary" onClick={()=>{setFSection("");setFLevel("");setFField("");}}>Effacer les filtres</button>}
       </div>

@@ -15,4 +15,4 @@ export function siteUrl(): string {
 
 // Devise affichée dans le pied de page (police Fraunces, en italique).
 // Remplace-la par la devise ou l'invocation de la commission ; mets "" pour la masquer.
-export const MOTTO = "Noppi ,tey, maañu ";
+export const MOTTO = "Noppi ,  teey , maandu ";
