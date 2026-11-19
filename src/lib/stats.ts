@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 
-export const TYPE_ORDER = ["GOUDI ALJUMAH", "KHADARA", "SPORT", "CELLULE FÉMININ", "TOUR MJ", "AUTRE"];
+export const TYPE_ORDER = ["GOUDI ALJUMAH", "KHADARA", "SPORT", "CELLULE FÉMININ", "TOUR MJ", "ENSEIGNEMENT GÉNÉRAL", "FORMATION", "AUTRE"];
 export const GOUDI = "GOUDI ALJUMAH";
 
 export type Mem = { id: string; first_name: string; last_name: string };

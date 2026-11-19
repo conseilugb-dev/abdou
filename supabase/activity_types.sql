@@ -1,6 +1,6 @@
 -- Types d'activités fixes (à exécuter dans Supabase > SQL Editor)
 insert into public.activity_types (name)
-select t.name from (values ('GOUDI ALJUMAH'),('KHADARA'),('SPORT'),('CELLULE FÉMININ'),('TOUR MJ'),('AUTRE')) as t(name)
+select t.name from (values ('GOUDI ALJUMAH'),('KHADARA'),('SPORT'),('CELLULE FÉMININ'),('TOUR MJ'),('ENSEIGNEMENT GÉNÉRAL'),('FORMATION'),('AUTRE')) as t(name)
 where not exists (select 1 from public.activity_types x where x.name = t.name);
 
 -- Lecture des types ouverte à tous (nécessaire pour les pages publiques)
