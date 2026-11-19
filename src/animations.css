@@ -1,0 +1,243 @@
+/* ============================================================
+   Animations supplémentaires (CSS uniquement, aucun changement de logique)
+   ============================================================ */
+
+@keyframes slide-in-left { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+@keyframes slide-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+@keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+@keyframes float-y { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- Apparition de chaque page ---------- */
+.content > * { animation: rise .45s ease both; }
+.content > *:nth-child(2) { animation-delay: .06s; }
+.content > *:nth-child(3) { animation-delay: .12s; }
+.content > *:nth-child(4) { animation-delay: .18s; }
+.content > *:nth-child(n+5) { animation-delay: .24s; }
+
+/* Trait sous le titre qui se dessine */
+.page-header h1::after { transform-origin: left; animation: grow-x .6s .15s ease both; }
+
+/* ---------- Menu latéral ---------- */
+.sidebar nav .nav-link { animation: slide-in-left .4s ease both; }
+.sidebar nav .nav-link:nth-child(1) { animation-delay: .05s; }
+.sidebar nav .nav-link:nth-child(2) { animation-delay: .1s; }
+.sidebar nav .nav-link:nth-child(3) { animation-delay: .15s; }
+.sidebar nav .nav-link:nth-child(4) { animation-delay: .2s; }
+.sidebar nav .nav-link:nth-child(5) { animation-delay: .25s; }
+.sidebar nav .nav-link:nth-child(6) { animation-delay: .3s; }
+.sidebar nav .nav-link:nth-child(7) { animation-delay: .35s; }
+.sidebar nav .nav-link:nth-child(8) { animation-delay: .4s; }
+.sidebar nav .nav-link:nth-child(9) { animation-delay: .45s; }
+.nav-link { transition: background .15s ease, color .15s ease, transform .15s ease; }
+.nav-link:hover { transform: translateX(4px); }
+.nav-link:hover svg { transform: scale(1.12) rotate(-4deg); }
+.nav-link svg { transition: transform .2s ease; }
+.nav-link.active::before { animation: grow-x .3s ease both; transform-origin: left; }
+
+/* Logo */
+.brand-logo { transition: transform .4s ease; }
+.brand-logo:hover { transform: rotate(-6deg) scale(1.06); }
+.login-logo { animation: float-y 4s ease-in-out infinite; }
+
+/* ---------- Cartes et panneaux ---------- */
+.panel { animation: rise .45s ease both; transition: transform .2s ease, box-shadow .2s ease; }
+.panel:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.stat-card svg { transition: transform .25s ease; }
+.stat-card:hover svg { transform: scale(1.15) rotate(-6deg); }
+
+/* ---------- Boutons ---------- */
+.primary:hover:not(:disabled), .secondary:hover:not(:disabled) { transform: translateY(-2px); }
+.primary { position: relative; overflow: hidden; }
+.primary::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.28) 50%, transparent 70%);
+  transform: translateX(-120%); transition: transform .6s ease;
+}
+.primary:hover:not(:disabled)::after { transform: translateX(120%); }
+.icon-btn { transition: background .12s ease, color .12s ease, transform .15s ease; }
+.icon-btn:hover { transform: scale(1.12); }
+.icon-btn:active { transform: scale(.92); }
+
+/* ---------- Tableaux et listes ---------- */
+tbody tr { animation: rise .35s ease both; }
+tbody tr:nth-child(1) { animation-delay: .02s; }
+tbody tr:nth-child(2) { animation-delay: .04s; }
+tbody tr:nth-child(3) { animation-delay: .06s; }
+tbody tr:nth-child(4) { animation-delay: .08s; }
+tbody tr:nth-child(5) { animation-delay: .1s; }
+tbody tr:nth-child(6) { animation-delay: .12s; }
+tbody tr:nth-child(7) { animation-delay: .14s; }
+tbody tr:nth-child(8) { animation-delay: .16s; }
+tbody tr:nth-child(n+9) { animation-delay: .18s; }
+.att-row { animation: rise .3s ease both; }
+.badge { animation: pop .3s ease both; }
+
+/* ---------- Formulaires ---------- */
+input, select, textarea { transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+input:focus, select:focus, textarea:focus { transform: translateY(-1px); }
+
+/* ---------- Messages ---------- */
+.error-box { animation: shake .45s ease both; }
+.success-box { animation: slide-down .3s ease both; }
+
+/* ---------- Fenêtres ---------- */
+.modal-backdrop { animation: fade .2s ease both; }
+.modal { animation: pop .28s cubic-bezier(.2, .9, .3, 1.2) both; }
+
+/* ---------- Chargement ---------- */
+.center-screen { animation: fade .4s ease both; }
+.skeleton {
+  background: linear-gradient(90deg, #f1e9e6 25%, #faf5f3 50%, #f1e9e6 75%);
+  background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: 8px;
+}
+.spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--brand); border-radius: 50%; animation: spin .8s linear infinite; }
+
+/* ---------- Accessibilité : respecter « réduire les animations » ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+
+/* ============================================================
+   PACK 2 : animations supplémentaires
+   ============================================================ */
+
+@keyframes glow-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,160,102,.45); } 50% { box-shadow: 0 0 0 8px rgba(217,160,102,0); } }
+@keyframes bar-stripes { from { background-position: 0 0; } to { background-position: 32px 0; } }
+@keyframes gradient-move { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@keyframes wiggle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+@keyframes bounce-in { 0% { opacity: 0; transform: scale(.6); } 60% { opacity: 1; transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes underline-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes drift { 0%,100% { background-position: 0 0, 0 0, 0 0; } 50% { background-position: 40px 30px, 0 0, 0 0; } }
+
+/* ---------- Barre du haut ---------- */
+.topbar { animation: slide-down .5s ease both; }
+.topbar-title { animation: fade .8s .2s ease both; }
+.topbar-user { transition: transform .2s ease, box-shadow .2s ease; }
+.topbar-user:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+
+/* Ligne animée sous la barre du haut */
+.topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), var(--brand), var(--gold), transparent);
+  background-size: 200% 100%; animation: gradient-move 6s ease-in-out infinite; opacity: .7;
+}
+
+/* ---------- Menu : lien actif lumineux ---------- */
+.nav-link.active { animation: glow-pulse 2.8s ease-out infinite; }
+.nav-link.active svg { animation: wiggle .5s ease .2s 1; }
+.nav-link:active { transform: scale(.97); }
+
+/* ---------- Onglets de types d'activité ---------- */
+.type-tab { position: relative; transition: transform .15s ease, background .15s ease, color .15s ease, box-shadow .15s ease; animation: bounce-in .4s ease both; }
+.type-tab:hover { transform: translateY(-2px); }
+.type-tab:active { transform: scale(.95); }
+.type-tab:nth-child(1) { animation-delay: .02s; }
+.type-tab:nth-child(2) { animation-delay: .06s; }
+.type-tab:nth-child(3) { animation-delay: .10s; }
+.type-tab:nth-child(4) { animation-delay: .14s; }
+.type-tab:nth-child(5) { animation-delay: .18s; }
+.type-tab:nth-child(6) { animation-delay: .22s; }
+.type-tab:nth-child(7) { animation-delay: .26s; }
+.type-tab:nth-child(8) { animation-delay: .30s; }
+.type-tab:nth-child(n+9) { animation-delay: .34s; }
+
+/* ---------- Cartes d'activités ---------- */
+.act-card { animation: rise .45s ease both; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.act-card:hover { transform: translateY(-4px) scale(1.01); box-shadow: var(--shadow-md); }
+.act-card:nth-child(2) { animation-delay: .05s; }
+.act-card:nth-child(3) { animation-delay: .10s; }
+.act-card:nth-child(4) { animation-delay: .15s; }
+.act-card:nth-child(5) { animation-delay: .20s; }
+.act-card:nth-child(6) { animation-delay: .25s; }
+.act-card:nth-child(n+7) { animation-delay: .30s; }
+.act-card-count { animation: bounce-in .5s .2s ease both; }
+
+/* ---------- Statuts (en cours, présent, absent...) ---------- */
+.sbadge { animation: bounce-in .4s ease both; }
+.sbadge-live, .live-badge { animation: breathe 1.8s ease-in-out infinite; }
+.sbadge-dot { animation: live-pulse 1.6s ease-out infinite; }
+.sbadge-present { transition: transform .15s ease; }
+.sbadge-present:hover, .sbadge-absent:hover { transform: scale(1.08); }
+
+/* ---------- Pointage (présent / absent) ---------- */
+.att-btn { transition: background .12s ease, border-color .12s ease, color .12s ease, transform .12s ease; }
+.att-btn:hover { transform: translateY(-2px); }
+.att-btn:active { transform: scale(.9); }
+.att-row:hover { transform: translateX(3px); }
+.att-row { transition: background .1s ease, transform .15s ease; }
+
+/* Barre de progression animée (rayures qui avancent) */
+.att-progress-bar span {
+  background-image: linear-gradient(45deg, rgba(255,255,255,.22) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.22) 50%, rgba(255,255,255,.22) 75%, transparent 75%);
+  background-size: 32px 32px; animation: bar-stripes 1s linear infinite;
+}
+
+/* ---------- Avatars et photos ---------- */
+.brand-mark { animation: bounce-in .6s ease both; }
+.brand-mark.large { animation: bounce-in .7s ease both, float-y 4s 1s ease-in-out infinite; }
+img.avatar, .avatar { transition: transform .25s ease, box-shadow .25s ease; }
+.avatar:hover { transform: scale(1.12) rotate(-3deg); box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+
+/* ---------- Page de connexion ---------- */
+.login-screen { background-size: auto, auto, 200% 200%; animation: drift 18s ease-in-out infinite; }
+.login-card h1 { animation: fade .8s .15s ease both; }
+.login-card label { animation: rise .4s ease both; }
+.login-card label:nth-of-type(1) { animation-delay: .2s; }
+.login-card label:nth-of-type(2) { animation-delay: .3s; }
+.login-card label:nth-of-type(3) { animation-delay: .4s; }
+.auth-hero-logo { animation: float-y 5s ease-in-out infinite; }
+.auth-hero-inner { animation: rise .7s ease both; }
+.auth-panel { animation: slide-in-left .6s ease both; }
+.pw-toggle { transition: transform .15s ease, color .15s ease; }
+.pw-toggle:hover { transform: scale(1.15); }
+
+/* ---------- Liens avec soulignement animé ---------- */
+.auth-link, .forgot-password { position: relative; text-decoration: none; }
+.auth-link::after, .forgot-password::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+  background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform .25s ease;
+}
+.auth-link:hover::after, .forgot-password:hover::after { transform: scaleX(1); }
+
+/* ---------- Recherche et barre d'outils ---------- */
+.toolbar { animation: slide-down .4s ease both; }
+.search { transition: box-shadow .2s ease, border-color .2s ease, width .25s ease; }
+.search:focus-within { box-shadow: 0 0 0 4px rgba(var(--brand-rgb), .12); }
+.input-icon { transition: transform .2s ease, color .2s ease; }
+.search:focus-within .input-icon, .input-icon:focus-within { transform: scale(1.15); color: var(--brand); }
+
+/* ---------- Tableau de bord : anneaux et graphiques ---------- */
+.dash-rings { animation: fade .6s ease both; }
+.dash-ring { animation: bounce-in .6s ease both; transition: transform .25s ease; }
+.dash-ring:hover { transform: scale(1.06); }
+.dash-ring:nth-child(2) { animation-delay: .1s; }
+.dash-ring:nth-child(3) { animation-delay: .2s; }
+.dash-ring:nth-child(4) { animation-delay: .3s; }
+.chart { animation: rise .6s .1s ease both; }
+
+/* ---------- États vides ---------- */
+.empty-state, .empty { animation: fade .6s ease both; }
+.empty-icon, .empty-art { animation: float-y 3.5s ease-in-out infinite; }
+
+/* ---------- Pied de page ---------- */
+.site-footer { animation: fade 1s .3s ease both; }
+.footer-ornament { animation: breathe 4s ease-in-out infinite; }
+
+/* ---------- Apparition au défilement (navigateurs récents) ---------- */
+@supports (animation-timeline: view()) {
+  .panel, .act-card, .stat-card {
+    animation: rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 35%;
+  }
+}
+
+/* ---------- Mode « réduire les animations » ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
