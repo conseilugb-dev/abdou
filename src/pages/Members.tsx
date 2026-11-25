@@ -22,6 +22,8 @@ export default function Members() {
   const [fField,setFField]=useState("");
   const [view,setView]=useState<"active"|"inactive"|"all">("active");
   const [open,setOpen]=useState(false);
+  const SEXES=["Masculin","Féminin"];
+  const POSTES=["CA","CTC","CL","CIPS","SANTE","PF","Membre simple"];
   const UFRS=["SAT","SJP","SEFS","SEG","S2ATA","CRAC","IPSL","2S","Formation","LSH","Autre"];
   // Champs demandés pour chaque membre. "locality" = Logement au campus, "room_number" = Numéro de chambre, "ufr" = UFR.
   type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[]};
@@ -35,6 +37,10 @@ export default function Members() {
     {key:"study_field",label:"Filière"},
     {key:"study_level",label:"Niveau d’étude",options:["Licence 1","Licence 2","Licence 3","Master 1","Master 2","Doctorat 1","Doctorat 2","Doctorat 3","Docteur","Autre"]},    {key:"ufr",label:"UFR",options:UFRS},
     {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
+    {key:"gender",label:"Sexe",options:SEXES},
+    {key:"scholarship",label:"Boursier",options:["Oui","Non"]},
+    {key:"function_name",label:"Poste occupé dans la section de base",options:POSTES},
+    {key:"medical_notes",label:"Maladie chronique ou allergies"},
   ];
   const blankForm=():Record<string,string>=>({...Object.fromEntries(FIELD_DEFS.map(f=>[f.key,""])),status:"active"});
   const [form,setForm]=useState<Record<string,string>>(blankForm());
@@ -71,6 +77,7 @@ export default function Members() {
       first_name:v.first_name.trim(),last_name:v.last_name.trim(),email:n(v.email),phone:n(v.phone),locality:n(v.locality),room_number:n(v.room_number),
       study_field:n(v.study_field),study_level:n(v.study_level),ufr:n(v.ufr),
       blood_group:n(v.blood_group),
+      gender:n(v.gender),scholarship:n(v.scholarship),function_name:n(v.function_name),medical_notes:n(v.medical_notes),
     };
   };
 
@@ -82,7 +89,7 @@ export default function Members() {
   const [own,setOwn]=useState<Record<string,Own>|null>(null);
   const [editing,setEditing]=useState(false);
   const [cardOpen,setCardOpen]=useState(false);
-  const [edit,setEdit]=useState<Record<string,string>>({...blankForm(),gender:"",birth_date:"",notes:""});
+  const [edit,setEdit]=useState<Record<string,string>>({...blankForm(),birth_date:"",notes:""});
   useEffect(()=>{loadStats().then(setStats).catch(()=>setStatsErr(true));},[]);
 
   async function openDetail(m:Member){
@@ -97,7 +104,8 @@ export default function Members() {
     const x=m as unknown as Record<string,unknown>;
     const v=blankForm();
     FIELD_DEFS.forEach(f=>{v[f.key]=x[f.key]==null?"":String(x[f.key]);});
-    setEdit({...v,gender:m.gender||"",birth_date:m.birth_date||"",status:m.status,notes:m.notes||""});
+    v.gender=m.gender==="M"?"Masculin":m.gender==="F"?"Féminin":(m.gender||"");
+    setEdit({...v,birth_date:m.birth_date||"",status:m.status,notes:m.notes||""});
     setPhotoFile(null);setPhotoErr("");setEditing(true);
   }
   async function saveEdit(e:FormEvent){
@@ -105,7 +113,7 @@ export default function Members() {
     if(!detail)return;
     if(!edit.phone.trim()){alert("Le téléphone est obligatoire.");return;}
     const n=(v:string)=>v.trim()||null;
-    const payload:Record<string,unknown>={...toPayload(edit),gender:n(edit.gender),birth_date:edit.birth_date||null,status:edit.status,notes:n(edit.notes)};
+    const payload:Record<string,unknown>={...toPayload(edit),birth_date:edit.birth_date||null,status:edit.status,notes:n(edit.notes)};
     if(photoFile){const url=await uploadPhoto(photoFile);if(!url)return;payload.photo_url=url;}
     const {data,error}=await supabase.from("members").update(payload).eq("id",detail.id).select();
     if(error){alert("Impossible de modifier le membre : "+error.message);return;}
@@ -173,13 +181,17 @@ export default function Members() {
   }
 
   // ----- Import Excel / CSV -----
-  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;room_number:string|null;study_field:string|null;study_level:string|null;ufr:string|null;blood_group:string|null};
-  const [imp,setImp]=useState<{rows:Imp[];dup:number;bad:number;homonyms:number;review:Imp[]}|null>(null);
+  type Imp={first_name:string;last_name:string;email:string|null;phone:string|null;gender:string|null;birth_date:string|null;locality:string|null;room_number:string|null;study_field:string|null;study_level:string|null;ufr:string|null;blood_group:string|null;scholarship:string|null;function_name:string|null;medical_notes:string|null};
+  const [imp,setImp]=useState<{rows:Imp[];dup:number;bad:number;homonyms:number;review:Imp[];unk:number}|null>(null);
   const [includeReview,setIncludeReview]=useState(false);
   const [impOpen,setImpOpen]=useState(false);
   const [impMsg,setImpMsg]=useState("");
   const norm=(v:unknown)=>String(v??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
-  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["logementaucampus","logement","adresseaucampus","adresse","localite","ville","quartier"],room_number:["numerodechambre","numerochambre","chambre","nchambre"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],ufr:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"]};
+  const FIELDS:Record<string,string[]>={first_name:["prenom","firstname","prenoms"],last_name:["nom","lastname","nomdefamille"],email:["email","mail","courriel"],phone:["telephone","tel","phone","numero","portable"],gender:["sexe","genre","gender"],birth_date:["datenaissance","naissance","birthdate","datedenaissance"],locality:["logementaucampus","logement","adresseaucampus","adresse","localite","ville","quartier"],room_number:["numerodechambre","numerochambre","chambre","nchambre"],study_field:["filiere"],study_level:["niveaudetude","niveau","etude"],ufr:["ufr","sectiondebase","section"],blood_group:["groupesanguin","groupe","sang"],scholarship:["boursier","boursiere","bourse"],function_name:["poste","posteoccupe","posteoccupedanslasectiondebase","postedanslasectiondebase","fonction"],medical_notes:["maladiechroniqueouallergies","maladieschroniquesouallergies","maladiechronique","allergies","allergie","maladie"]};
+  // Normalisation des valeurs importées (renvoie undefined si la valeur est remplie mais non reconnue)
+  const normSexe=(v:unknown):string|null|undefined=>{const x=norm(v);if(!x)return null;if(x==="m"||x==="h"||x.startsWith("masc")||x.startsWith("homme")||x==="garcon")return "Masculin";if(x==="f"||x.startsWith("fem")||x==="femme"||x==="fille")return "Féminin";return undefined;};
+  const normOuiNon=(v:unknown):string|null|undefined=>{const x=norm(v);if(!x)return null;if(["oui","o","yes","y","vrai","true","x"].includes(x))return "Oui";if(["non","n","no","faux","false"].includes(x))return "Non";return undefined;};
+  const normPoste=(v:unknown):string|null|undefined=>{const x=norm(v);if(!x)return null;if(["membresimple","simplemembre","membre","simple","ms"].includes(x))return "Membre simple";return POSTES.find(p=>norm(p)===x)||undefined;};
   const toDate=(v:unknown)=>{if(!v)return null;if(v instanceof Date&&!isNaN(+v))return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);const t=String(v).trim();const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;return /^\d{4}-\d{2}-\d{2}$/.test(t)?t:null;};
   async function readFile(f:File){
     setImpMsg("");setImp(null);
@@ -191,13 +203,15 @@ export default function Members() {
       // Pour chaque « prénom|nom » déjà connu : la liste des téléphones des membres qui le portent
       const byName=new Map<string,(string|null)[]>();
       members.forEach(m=>{const k=`${norm(m.first_name)}|${norm(m.last_name)}`;byName.set(k,[...(byName.get(k)||[]),phoneKey(m.phone)]);});
-      const rows:Imp[]=[],review:Imp[]=[];let dup=0,bad=0,homonyms=0;
+      const rows:Imp[]=[],review:Imp[]=[];let dup=0,bad=0,homonyms=0,unk=0;
       raw.forEach(r=>{
         const g=(k:string)=>{const key=Object.keys(r).find(c=>FIELDS[k].includes(norm(c)));return key?r[key]:"";};
         const first=String(g("first_name")).trim(),last=String(g("last_name")).trim();
         const t=(k:string)=>String(g(k)).trim()||null;
         if(!first||!last||!t("phone")){bad++;return;}
-        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:t("gender"),birth_date:toDate(g("birth_date")),locality:t("locality"),room_number:t("room_number"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group")};
+        const sx=normSexe(g("gender")),bs=normOuiNon(g("scholarship")),po=normPoste(g("function_name"));
+        if(sx===undefined||bs===undefined||po===undefined)unk++;
+        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:sx??null,birth_date:toDate(g("birth_date")),locality:t("locality"),room_number:t("room_number"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group"),scholarship:bs??null,function_name:po??null,medical_notes:t("medical_notes")};
         const id=`${norm(first)}|${norm(last)}`;
         const mine=phoneKey(row.phone);
         const known=byName.get(id);
@@ -210,7 +224,7 @@ export default function Members() {
         rows.push(row);
       });
       setIncludeReview(false);
-      setImp({rows,dup,bad,homonyms,review});
+      setImp({rows,dup,bad,homonyms,review,unk});
     }catch{setImpMsg("Fichier illisible. Utilise un fichier .xlsx, .xls ou .csv.");}
   }
   async function confirmImport(){
@@ -224,7 +238,7 @@ export default function Members() {
     setImpMsg(`${toAdd.length} membre(s) ajouté(s).`);setImp(null);setIncludeReview(false);load();
   }
   function template(){
-    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Logement au campus","Numéro de chambre","Filière","Niveau d’étude","UFR","Groupe sanguin"],["Awa","Fall","awa@example.com","770000000","Pavillon A","12","Informatique","L2","UFR SAT","O+"]]);
+    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Logement au campus","Numéro de chambre","Filière","Niveau d’étude","UFR","Groupe sanguin","Sexe","Boursier","Poste occupé dans la section de base","Maladie chronique ou allergies"],["Awa","Fall","awa@example.com","770000000","Pavillon A","12","Informatique","Licence 2","SAT","O+","Féminin","Oui","Membre simple","Asthme"]]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Membres");XLSX.writeFile(wb,"modele-import-membres.xlsx");
   }
 
@@ -243,7 +257,7 @@ export default function Members() {
       "N° membre":m.member_number,"Prénom":m.first_name,"Nom":m.last_name,"Email":m.email||"","Téléphone":m.phone||"","Logement au campus":m.locality||"","Numéro de chambre":m.room_number||"",
       "Filière":m.study_field||"","Niveau d’étude":m.study_level||"","UFR":m.ufr||"",
       "Groupe sanguin":m.blood_group||"",
-      "Sexe":m.gender||"","Date de naissance":m.birth_date||"","Statut":m.status==="active"?"Actif":"Ancien membre","Photo (lien)":m.photo_url||"","Notes":m.notes||"","Créé le":(m.created_at||"").slice(0,10),
+      "Sexe":m.gender==="M"?"Masculin":m.gender==="F"?"Féminin":(m.gender||""),"Boursier":m.scholarship||"","Poste dans la section de base":m.function_name||"","Maladie chronique ou allergies":m.medical_notes||"","Date de naissance":m.birth_date||"","Statut":m.status==="active"?"Actif":"Ancien membre","Photo (lien)":m.photo_url||"","Notes":m.notes||"","Créé le":(m.created_at||"").slice(0,10),
     }));
     const ws=XLSX.utils.json_to_sheet(rows);
     ws["!cols"]=Object.keys(rows[0]||{}).map(k=>({wch:Math.max(12,k.length+2)}));
@@ -274,10 +288,10 @@ export default function Members() {
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setOpen(false)}>Annuler</button><button className="primary">Enregistrer</button></div>
     </form></div>}
     {impOpen&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><h2>Importer des membres</h2><button type="button" className="icon-btn" onClick={()=>setImpOpen(false)}>×</button></div>
-      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Logement au campus, Numéro de chambre, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
+      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Logement au campus, Numéro de chambre, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin, <b>Sexe</b> (Masculin ou Féminin), <b>Boursier</b> (Oui ou Non), <b>Poste occupé dans la section de base</b> (CA, CTC, CL, CIPS, SANTE, PF ou Membre simple), <b>Maladie chronique ou allergies</b>. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);}}/>
       <p style={{marginBottom:0}}><button type="button" className="secondary" onClick={template}>Télécharger le modèle</button></p></div>
-      {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom, prénom ou téléphone ignorée(s)</div>}
+      {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom, prénom ou téléphone ignorée(s){imp.unk>0&&<> · <b>{imp.unk}</b> ligne(s) avec une valeur de sexe, boursier ou poste non reconnue (cette case sera laissée vide)</>}</div>}
       {imp&&imp.review.length>0&&<div className="error-box" style={{background:"#fff8e6",borderColor:"#f5d78a",color:"#8a5a00",marginTop:12}}>
         <b>{imp.review.length} homonyme(s) à vérifier</b> : même prénom et nom qu'un membre déjà enregistré, mais un téléphone manque pour savoir si c'est la même personne. Ils ne sont pas ajoutés par défaut.
         <ul style={{margin:"8px 0",paddingLeft:18}}>{imp.review.slice(0,8).map((r,i)=><li key={i}>{r.last_name} {r.first_name} — {r.phone||"pas de numéro"}</li>)}{imp.review.length>8&&<li>… et {imp.review.length-8} autre(s)</li>}</ul>
@@ -292,7 +306,6 @@ export default function Members() {
       {detail.status==="inactive"&&<div className="error-box" style={{marginBottom:14,background:"#fff8e6",borderColor:"#f5d78a",color:"#8a5a00"}}>Ancien membre : masqué, non compté dans les statistiques, les relances ni les listes de présence. Son historique est conservé.</div>}
       {editing?(<form onSubmit={saveEdit}>
         <div className="form-grid">{FIELD_DEFS.map(f=>renderField(f,edit,setEdit))}
-          <label>Sexe (M ou F)<input value={edit.gender} onChange={e=>setEdit({...edit,gender:e.target.value})}/></label>
           <label>Date de naissance<input type="date" value={edit.birth_date} onChange={e=>setEdit({...edit,birth_date:e.target.value})}/></label>
           <PhotoField current={detail.photo_url}/>
           <label>Statut<select value={edit.status} onChange={e=>setEdit({...edit,status:e.target.value})}><option value="active">Actif</option><option value="inactive">Ancien membre (masqué)</option></select></label>
@@ -313,6 +326,9 @@ export default function Members() {
         ["UFR",detail.ufr],
         ["Groupe sanguin",ext(detail,"blood_group")],
         ["Sexe",detail.gender==="F"?"Féminin":detail.gender==="M"?"Masculin":detail.gender],
+        ["Boursier",detail.scholarship],
+        ["Poste dans la section de base",detail.function_name],
+        ["Maladie chronique ou allergies",detail.medical_notes],
         ["Date de naissance",detail.birth_date?`${fmtDate(detail.birth_date)}${ageOf(detail.birth_date)!==null?` (${ageOf(detail.birth_date)} ans)`:""}`:null],
         ["Membre depuis",fmtDate(detail.created_at)],
       ] as [string,string|null][]).map(([l,v])=><div key={l}><div style={{fontSize:12,color:"#667085"}}>{l}</div><div style={{fontWeight:600,wordBreak:"break-word"}}>{v||"—"}</div></div>)}</div>

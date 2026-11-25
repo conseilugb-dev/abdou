@@ -321,8 +321,6 @@ export default function Attendance() {
               {info && <span className="att-info">{info}</span>}
             </div>
             <div className="att-actions">
-              <button className="secondary" onClick={() => setMany(shown.map((m) => m.id), "Présent")}>Tous présents</button>
-              <button className="secondary" onClick={() => setMany(shown.map((m) => m.id), "Absent")}>Tous absents</button>
               <button className="primary" disabled={todo === 0} onClick={closeRoll}>Clôturer l'appel</button>
             </div>
           </div>

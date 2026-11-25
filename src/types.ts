@@ -35,6 +35,8 @@ export interface Member {
   join_year: number | null;
   guardian_phone: string | null;
   blood_group: string | null;
+  scholarship: string | null;
+  medical_notes: string | null;
   status: MemberStatus;
   notes: string | null;
   created_at: string;
