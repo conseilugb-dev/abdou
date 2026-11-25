@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, ClipboardCheck, ClipboardList, QrCode, ScanLine, Users } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import PageHeader from "../components/PageHeader";
+import ProfileCharts from "../components/ProfileCharts";
 import { fmtDate, goudiStreaks, loadStats, type StatsData } from "../lib/stats";
 
 type Upcoming = {
@@ -426,6 +427,8 @@ export default function Dashboard() {
             ))}
         </Box>
       </div>
+
+      <ProfileCharts />
     </>
   );
 }

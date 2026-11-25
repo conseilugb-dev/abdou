@@ -4,10 +4,12 @@ import { FileSpreadsheet, FileText } from "lucide-react";
 import PageHeader from "../components/PageHeader";
 import { loadStats, fmtDate, TYPE_ORDER, type StatsData } from "../lib/stats";
 import { downloadExcel, downloadPdf, type Sheet } from "../lib/report";
+import ProfileStats from "./ProfileStats";
 
 export default function Statistics() {
   const [data, setData] = useState<StatsData | null>(null);
   const [type, setType] = useState("TOUS");
+  const [view, setView] = useState<"presence" | "profil">("presence");
   const [error, setError] = useState("");
 
   useEffect(() => { loadStats().then(setData).catch((e) => setError(e.message)); }, []);
@@ -45,12 +47,18 @@ export default function Statistics() {
 
   return (
     <>
-      <PageHeader title="Statistiques" description="Présents et absents par type d'activité et par activité."
-        action={<div className="att-actions">
+      <PageHeader title="Statistiques" description={view === "profil" ? "Profil des membres : boursiers, sexe, groupe sanguin, poste, UFR, niveau, logement, santé." : "Présents et absents par type d'activité et par activité."}
+        action={view === "profil" ? undefined : <div className="att-actions">
           <button className="secondary" onClick={() => downloadExcel(`rapport-${label}`, sheets())}><FileSpreadsheet size={18} /> Excel</button>
           <button className="secondary" onClick={() => downloadPdf(`rapport-${label}`, `Rapport — ${type === "TOUS" ? "tous les types" : type}`, sheets().slice(0, 2))}><FileText size={18} /> PDF</button>
         </div>} />
 
+      <div className="type-tabs">
+        <button className={`type-tab ${view === "presence" ? "on" : ""}`} onClick={() => setView("presence")}>Présences</button>
+        <button className={`type-tab ${view === "profil" ? "on" : ""}`} onClick={() => setView("profil")}>Profil des membres</button>
+      </div>
+
+      {view === "profil" ? <ProfileStats /> : (<>
       <div className="type-tabs">
         {["TOUS", ...TYPE_ORDER].map((t) => (
           <button key={t} className={`type-tab ${type === t ? "on" : ""}`} onClick={() => setType(t)}>{t === "TOUS" ? "Tous" : t}</button>
@@ -95,6 +103,7 @@ export default function Statistics() {
         </table>
         {!acts.length && <div className="empty">Aucune activité.</div>}
       </div>
+      </>)}
     </>
   );
 }

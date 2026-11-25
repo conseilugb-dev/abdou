@@ -1,188 +1,284 @@
 import { useEffect, useMemo, useState } from "react";
 import { FileSpreadsheet, FileText, RefreshCw } from "lucide-react";
-import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import PageHeader from "../components/PageHeader";
-import { supabase } from "../lib/supabase";
+import { useBranding } from "../lib/branding";
+import { TYPE_ORDER } from "../lib/stats";
+import {
+  REPORTS, buildReport, loadExportData, writeExcel, writePdf,
+  type ExportData, type ReportKind, type RMember, type RSheet, type Report,
+} from "../lib/exportReports";
 
-type MemberRow = {
-  member_number: string; first_name: string; last_name: string; email: string | null;
-  phone: string | null; locality: string | null; function_name: string | null; status: string;
-};
-type ActivityRow = {
-  name: string; description: string | null; location: string | null; start_datetime: string;
-  end_datetime: string | null; status: string;
-};
-type AttendanceRow = {
-  status: string; method: string; check_in_at: string | null;
-  members: { member_number: string; first_name: string; last_name: string; phone: string | null } | null;
-  activities: { name: string; start_datetime: string } | null;
-};
-type ExportKind = "members" | "activities" | "attendance";
-
-const dateText = (value?: string | null) => value ? new Date(value).toLocaleString("fr-FR") : "—";
 const MEMBER_FILTER_FIELDS = [
   ["first_name", "Prénom"], ["last_name", "Nom"], ["email", "E-mail"],
-  ["phone", "Téléphone"], ["locality", "Localité"], ["function_name", "Fonction"],
+  ["phone", "Téléphone"], ["locality", "Adresse"], ["function_name", "Fonction"], ["ufr", "UFR"],
 ] as const;
 type MemberFilters = Record<(typeof MEMBER_FILTER_FIELDS)[number][0], string> & { status: "" | "active" | "inactive" };
-const EMPTY_MEMBER_FILTERS: MemberFilters = {
-  first_name: "", last_name: "", email: "", phone: "", locality: "", function_name: "", status: "",
-};
-// Comparaison sans accents ni majuscules
+const EMPTY_MF: MemberFilters = { first_name: "", last_name: "", email: "", phone: "", locality: "", function_name: "", ufr: "", status: "" };
 const fold = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const errorText = (e: unknown) => (e instanceof Error ? e.message : "Une erreur inattendue est survenue.");
 
-const errorText = (error: unknown) => error instanceof Error ? error.message : "Une erreur inattendue est survenue.";
+/** Retire les colonnes décochées d'une feuille (en gardant totaux et couleurs alignés). */
+function applyCols(s: RSheet, hidden: number[]): RSheet {
+  if (!hidden.length || s.kv || s.matrix) return s;
+  const keep = s.head.map((_, i) => i).filter((i) => !hidden.includes(i));
+  if (!keep.length || keep.length === s.head.length) return s;
+  return {
+    ...s,
+    head: keep.map((i) => s.head[i]),
+    rows: s.rows.map((r) => keep.map((i) => r[i])),
+    totals: s.totals ? keep.map((i) => s.totals![i]) : undefined,
+    statusCols: s.statusCols?.map((c) => keep.indexOf(c)).filter((c) => c >= 0),
+  };
+}
 
 export default function Exports() {
-  const [kind, setKind] = useState<ExportKind>("attendance");
-  const [members, setMembers] = useState<MemberRow[]>([]);
-  const [activities, setActivities] = useState<ActivityRow[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
+  const brand = useBranding();
+  const [kind, setKind] = useState<ReportKind>("synthese");
+  const [data, setData] = useState<ExportData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [mf, setMf] = useState<MemberFilters>(EMPTY_MEMBER_FILTERS);
+  const [type, setType] = useState("");
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [includeUnmarked, setIncludeUnmarked] = useState(false);
+  const [mf, setMf] = useState<MemberFilters>(EMPTY_MF);
+  const [sheetIdx, setSheetIdx] = useState(0);
+  const [offSheets, setOffSheets] = useState<string[]>([]);              // feuilles décochées
+  const [offCols, setOffCols] = useState<Record<string, number[]>>({});  // colonnes décochées par feuille
 
   const loadData = async () => {
     setLoading(true); setError(""); setNotice("");
-    try {
-      const [m, a, p] = await Promise.all([
-        supabase.from("members").select("member_number,first_name,last_name,email,phone,locality,function_name,status").order("last_name"),
-        supabase.from("activities").select("name,description,location,start_datetime,end_datetime,status").order("start_datetime", { ascending: false }),
-        supabase.from("attendance").select("status,method,check_in_at,members(member_number,first_name,last_name,phone),activities(name,start_datetime)").order("created_at", { ascending: false }),
-      ]);
-      if (m.error) throw m.error;
-      if (a.error) throw a.error;
-      if (p.error) throw p.error;
-      setMembers((m.data ?? []) as MemberRow[]);
-      setActivities((a.data ?? []) as ActivityRow[]);
-      setAttendance((p.data ?? []) as unknown as AttendanceRow[]);
-    } catch (e) { setError(`Impossible de charger les données. Vérifie la connexion Supabase et les autorisations RLS. ${errorText(e)}`); }
+    try { setData(await loadExportData()); }
+    catch (e) { setError(`Impossible de charger les données. Vérifie la connexion Supabase et les autorisations. ${errorText(e)}`); }
     finally { setLoading(false); }
   };
-
   useEffect(() => { void loadData(); }, []);
 
-  const filteredAttendance = useMemo(() => attendance.filter(row => {
-    const value = row.activities?.start_datetime;
-    if (!value) return !from && !to;
-    const day = value.slice(0, 10);
-    return (!from || day >= from) && (!to || day <= to);
-  }), [attendance, from, to]);
-
-  const filteredMembers = useMemo(() => members.filter(m => {
-    if (mf.status && m.status !== mf.status) return false;
-    return MEMBER_FILTER_FIELDS.every(([key]) => {
-      const wanted = fold(mf[key]);
-      if (!wanted) return true;
-      const value = key === "phone" ? String(m.phone ?? "").replace(/\s/g, "") : fold(m[key]);
-      return key === "phone" ? value.includes(wanted.replace(/\s/g, "")) : value.includes(wanted);
-    });
-  }), [members, mf]);
   const memberFiltersActive = mf.status !== "" || MEMBER_FILTER_FIELDS.some(([key]) => mf[key].trim() !== "");
+  const memberFilter = useMemo(() => {
+    if (!memberFiltersActive) return undefined;
+    return (m: RMember) => {
+      if (mf.status && m.status !== mf.status) return false;
+      return MEMBER_FILTER_FIELDS.every(([key]) => {
+        const wanted = fold(mf[key]);
+        if (!wanted) return true;
+        if (key === "phone") return String(m.phone ?? "").replace(/\s/g, "").includes(wanted.replace(/\s/g, ""));
+        return fold((m as unknown as Record<string, unknown>)[key]).includes(wanted);
+      });
+    };
+  }, [memberFiltersActive, mf]);
 
-  const getRows = () => {
-    if (kind === "members") return filteredMembers.map(m => ({
-      "Prénom": m.first_name, "Nom": m.last_name,
-      "E-mail": m.email ?? "", "Téléphone": m.phone ?? "", "Localité": m.locality ?? "",
-      "Fonction": m.function_name ?? "", "Statut": m.status === "active" ? "Actif" : "Inactif",
-    }));
-    if (kind === "activities") return activities.map(a => ({
-      "Activité": a.name, "Description": a.description ?? "", "Lieu": a.location ?? "",
-      "Date de début": dateText(a.start_datetime), "Date de fin": dateText(a.end_datetime), "Statut": a.status,
-    }));
-    // Tri : par activité (récente d'abord), puis par ordre de scan (heure d'arrivée croissante)
-    const sorted = [...filteredAttendance].sort((a, b) => {
-      const da = a.activities?.start_datetime ?? "", db = b.activities?.start_datetime ?? "";
-      if (da !== db) return db.localeCompare(da);
-      const ta = a.check_in_at, tb = b.check_in_at;
-      if (ta && tb) return ta.localeCompare(tb);
-      if (ta) return -1;
-      if (tb) return 1;
-      return (a.members?.last_name ?? "").localeCompare(b.members?.last_name ?? "", "fr");
-    });
-    const counters: Record<string, number> = {};
-    return sorted.map(p => ({
-      "Ordre": p.check_in_at ? (counters[p.activities?.start_datetime ?? ""] = (counters[p.activities?.start_datetime ?? ""] ?? 0) + 1) : "",
-      "Activité": p.activities?.name ?? "Activité supprimée", "Date activité": dateText(p.activities?.start_datetime),
-      "Prénom": p.members?.first_name ?? "",
-      "Nom": p.members?.last_name ?? "", "Téléphone": p.members?.phone ?? "",
-      "Présence": p.status, "Méthode": p.method === "qr" ? "QR Code" : "Manuelle", "Enregistrée le": dateText(p.check_in_at),
-    }));
-  };
+  const rawReport = useMemo(
+    () => (data ? buildReport(kind, data, { from, to, type, includeInactive, includeUnmarked, memberFilter }) : null),
+    [data, kind, from, to, type, includeInactive, includeUnmarked, memberFilter],
+  );
+  // Rapport réellement exporté : uniquement les feuilles et colonnes choisies
+  const report: Report | null = useMemo(() => {
+    if (!rawReport) return null;
+    const sheets = rawReport.sheets.filter((s) => !offSheets.includes(s.name)).map((s) => applyCols(s, offCols[s.name] ?? []));
+    return { ...rawReport, sheets };
+  }, [rawReport, offSheets, offCols]);
+  const toggleSheet = (name: string) => setOffSheets((o) => (o.includes(name) ? o.filter((n) => n !== name) : [...o, name]));
+  const toggleCol = (sheet: string, i: number) => setOffCols((c) => {
+    const cur = c[sheet] ?? [];
+    return { ...c, [sheet]: cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i] };
+  });
+  const types = useMemo(() => {
+    const extra = (data?.types ?? []).map((t) => t.name).filter((n) => !TYPE_ORDER.includes(n));
+    return [...TYPE_ORDER, ...extra];
+  }, [data]);
 
-  const label = kind === "members" ? "Membres" : kind === "activities" ? "Activités" : "Présences";
+  const hasData = !!report && report.sheets.some((s) => s.rows.length > 0);
+  const preview = report ? (report.sheets[Math.min(sheetIdx, report.sheets.length - 1)] ?? null) : null;
+  const current = REPORTS.find((r) => r.id === kind)!;
+  const brandInfo = { org: brand.organization_name, section: brand.section, conseil: brand.conseil, comite: brand.comite, logo: brand.logo_url };
+
   const exportExcel = () => {
+    if (!report) return;
     setError(""); setNotice("");
-    const rows = getRows();
-    if (!rows.length) { setError("Aucune donnée à exporter pour cette sélection."); return; }
-    const workbook = XLSX.utils.book_new();
-    const sheet = XLSX.utils.json_to_sheet(rows);
-    sheet["!cols"] = Object.keys(rows[0]).map(key => ({ wch: Math.min(Math.max(key.length + 4, 14), 32) }));
-    XLSX.utils.book_append_sheet(workbook, sheet, label);
-    XLSX.writeFile(workbook, `moustarchidine-junior-${kind}-${new Date().toISOString().slice(0,10)}.xlsx`);
-    setNotice(`Le fichier Excel « ${label} » a été généré.`);
+    if (!report.sheets.length) { setError("Coche au moins une feuille à exporter."); return; }
+    if (!hasData) { setError("Aucune donnée à exporter pour cette sélection."); return; }
+    try { writeExcel(report, brand.organization_name); setNotice(`Le fichier Excel « ${report.title} » a été généré (${report.sheets.length} feuille(s)).`); }
+    catch (e) { setError(errorText(e)); }
+  };
+  const exportPdf = async () => {
+    if (!report) return;
+    setError(""); setNotice("");
+    if (!report.sheets.length) { setError("Coche au moins une feuille à exporter."); return; }
+    if (!hasData) { setError("Aucune donnée à exporter pour cette sélection."); return; }
+    setBusy("pdf");
+    try { await writePdf(report, brandInfo); setNotice(`Le rapport PDF « ${report.title} » a été généré.`); }
+    catch (e) { setError(errorText(e)); }
+    finally { setBusy(""); }
   };
 
-  const exportPdf = () => {
-    setError(""); setNotice("");
-    const rows = getRows();
-    if (!rows.length) { setError("Aucune donnée à exporter pour cette sélection."); return; }
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    doc.setFontSize(16); doc.text("Moustarchidine Junior", 14, 15);
-    doc.setFontSize(11); doc.text(`Rapport : ${label}`, 14, 22);
-    doc.setFontSize(9); doc.text(`Généré le ${new Date().toLocaleString("fr-FR")}`, 14, 28);
-    const columns = Object.keys(rows[0]);
-    const body = rows.map(row => columns.map(column => String((row as unknown as Record<string, unknown>)[column] ?? "—")));
-    autoTable(doc, { startY: 34, head: [columns], body, styles: { fontSize: 7, cellPadding: 2, overflow: "linebreak" }, headStyles: { fillColor: [22, 101, 52] }, margin: { left: 10, right: 10 } });
-    doc.save(`moustarchidine-junior-${kind}-${new Date().toISOString().slice(0,10)}.pdf`);
-    setNotice(`Le rapport PDF « ${label} » a été généré.`);
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const setRange = (k: "month" | "lastMonth" | "year" | "30" | "all") => {
+    const n = new Date();
+    if (k === "all") { setFrom(""); setTo(""); return; }
+    if (k === "month") { setFrom(iso(new Date(n.getFullYear(), n.getMonth(), 1))); setTo(iso(new Date(n.getFullYear(), n.getMonth() + 1, 0))); }
+    if (k === "lastMonth") { setFrom(iso(new Date(n.getFullYear(), n.getMonth() - 1, 1))); setTo(iso(new Date(n.getFullYear(), n.getMonth(), 0))); }
+    if (k === "year") { setFrom(iso(new Date(n.getFullYear(), 0, 1))); setTo(iso(new Date(n.getFullYear(), 11, 31))); }
+    if (k === "30") { setFrom(iso(new Date(n.getTime() - 30 * 86400000))); setTo(iso(n)); }
   };
+  const showDates = kind !== "members";
+  const showType = kind !== "members";
 
   return <>
-    <PageHeader title="Exports Excel / PDF" description="Télécharge des rapports à partir des données enregistrées dans Supabase." />
+    <PageHeader title="Exports Excel / PDF" description="Rapports détaillés avec statistiques, taux de présence, absences et détail par membre et par activité." />
     <div className="panel">
+      <div className="type-tabs" style={{ marginBottom: 6 }}>
+        {REPORTS.map((r) => (
+          <button key={r.id} type="button" className={`type-tab${kind === r.id ? " on" : ""}`}
+            onClick={() => { setKind(r.id); setNotice(""); setError(""); setSheetIdx(0); setOffSheets([]); setOffCols({}); }}>{r.label}</button>
+        ))}
+      </div>
+      <p className="muted" style={{ margin: "8px 0 16px" }}>{current.desc}</p>
+
       <div className="form-grid">
-        <label>Type de rapport
-          <select value={kind} onChange={e => { setKind(e.target.value as ExportKind); setNotice(""); setError(""); }}>
-            <option value="attendance">Présences</option><option value="members">Membres</option><option value="activities">Activités</option>
-          </select>
-        </label>
+        {showDates && <>
+          <label>Date de début (facultatif)<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label>Date de fin (facultatif)<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+        </>}
+        {showType && (
+          <label>Type d'activité
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">Tous les types</option>
+              {types.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+        )}
         {kind === "members" && <>
           {MEMBER_FILTER_FIELDS.map(([key, text]) => (
             <label key={key}>{text} (filtre)
-              <input value={mf[key]} placeholder={`Contient…`} onChange={e => setMf({ ...mf, [key]: e.target.value })} />
+              <input value={mf[key]} placeholder="Contient…" onChange={(e) => setMf({ ...mf, [key]: e.target.value })} />
             </label>
           ))}
           <label>Statut
-            <select value={mf.status} onChange={e => setMf({ ...mf, status: e.target.value as MemberFilters["status"] })}>
+            <select value={mf.status} onChange={(e) => setMf({ ...mf, status: e.target.value as MemberFilters["status"] })}>
               <option value="">Tous</option><option value="active">Actif</option><option value="inactive">Inactif</option>
             </select>
           </label>
         </>}
-        {kind === "attendance" && <>
-          <label>Date de début (facultatif)<input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
-          <label>Date de fin (facultatif)<input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
-        </>}
       </div>
-      <div className="toolbar" style={{ marginTop: 18, flexWrap: "wrap" }}>
-        <button className="button" onClick={exportExcel} disabled={loading}><FileSpreadsheet size={17} /> Exporter en Excel (.xlsx)</button>
-        <button className="button secondary" onClick={exportPdf} disabled={loading}><FileText size={17} /> Exporter en PDF</button>
-        <button className="button secondary" onClick={() => void loadData()} disabled={loading}><RefreshCw size={17} /> {loading ? "Chargement…" : "Actualiser les données"}</button>
-      </div>
-      {kind === "members" && (
-        <p className="muted" style={{ marginTop: 14 }}>
-          {filteredMembers.length} membre(s) sur {members.length} seront exportés.{" "}
-          {memberFiltersActive && <button type="button" className="secondary" onClick={() => setMf(EMPTY_MEMBER_FILTERS)}>Réinitialiser les filtres</button>}
-        </p>
+
+      {showDates && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+          <span className="muted" style={{ fontSize: 13 }}>Raccourcis :</span>
+          {([["month", "Ce mois"], ["lastMonth", "Mois dernier"], ["30", "30 derniers jours"], ["year", "Cette année"], ["all", "Toutes les dates"]] as const).map(([k, l]) => (
+            <button key={k} type="button" className="secondary" style={{ padding: "6px 12px", fontSize: 13 }} onClick={() => setRange(k)}>{l}</button>
+          ))}
+        </div>
       )}
+
+      {kind !== "members" && (
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 14 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} style={{ width: "auto" }} />
+            Inclure les anciens membres (inactifs)
+          </label>
+          {(kind === "attendance" || kind === "synthese") && (
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={includeUnmarked} onChange={(e) => setIncludeUnmarked(e.target.checked)} style={{ width: "auto" }} />
+              Lister aussi les absents non marqués (fichier plus long)
+            </label>
+          )}
+        </div>
+      )}
+
+      {rawReport && rawReport.sheets.length > 0 && (
+        <div style={{ marginTop: 18, padding: 16, border: "1px solid var(--line)", borderRadius: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <h3 style={{ margin: 0 }}>Que veux-tu exporter ?</h3>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" className="secondary" style={{ padding: "6px 12px", fontSize: 13 }} onClick={() => setOffSheets([])}>Tout cocher</button>
+              <button type="button" className="secondary" style={{ padding: "6px 12px", fontSize: 13 }} onClick={() => setOffSheets(rawReport.sheets.map((x) => x.name))}>Tout décocher</button>
+              <button type="button" className="secondary" style={{ padding: "6px 12px", fontSize: 13 }} onClick={() => { setOffSheets([]); setOffCols({}); }}>Réinitialiser</button>
+            </div>
+          </div>
+          <p className="muted" style={{ margin: "0 0 10px", fontSize: 13 }}>Coche les feuilles voulues. Ouvre « Colonnes » pour choisir les colonnes à garder dans une feuille.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 8 }}>
+            {rawReport.sheets.map((sh) => {
+              const on = !offSheets.includes(sh.name);
+              const hidden = offCols[sh.name] ?? [];
+              const canPick = !sh.kv && !sh.matrix && sh.head.length > 1;
+              return (
+                <div key={sh.name} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", opacity: on ? 1 : 0.55 }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 600 }}>
+                    <input type="checkbox" checked={on} onChange={() => toggleSheet(sh.name)} style={{ width: "auto" }} />
+                    <span style={{ flex: 1 }}>{sh.name}</span>
+                    <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>{sh.rows.length} ligne(s)</span>
+                  </label>
+                  {canPick && on && (
+                    <details style={{ marginTop: 6 }}>
+                      <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--brand)" }}>Colonnes ({sh.head.length - hidden.length}/{sh.head.length})</summary>
+                      <div style={{ display: "flex", gap: 8, margin: "8px 0" }}>
+                        <button type="button" className="secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setOffCols((c) => ({ ...c, [sh.name]: [] }))}>Toutes</button>
+                        <button type="button" className="secondary" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setOffCols((c) => ({ ...c, [sh.name]: sh.head.map((_, i) => i).slice(1) }))}>Seulement la 1re</button>
+                      </div>
+                      <div style={{ display: "grid", gap: 4, maxHeight: 220, overflowY: "auto" }}>
+                        {sh.head.map((h, i) => (
+                          <label key={`${h}-${i}`} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                            <input type="checkbox" checked={!hidden.includes(i)} onChange={() => toggleCol(sh.name, i)} style={{ width: "auto" }} />
+                            {h}
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="toolbar" style={{ marginTop: 18, flexWrap: "wrap" }}>
+        <button className="primary" onClick={exportExcel} disabled={loading || !!busy || !report || !report.sheets.length}><FileSpreadsheet size={17} /> Exporter en Excel (.xlsx)</button>
+        <button className="secondary" onClick={() => void exportPdf()} disabled={loading || !!busy || !report || !report.sheets.length}><FileText size={17} /> {busy === "pdf" ? "Génération…" : "Exporter en PDF"}</button>
+        <button className="secondary" onClick={() => void loadData()} disabled={loading || !!busy}><RefreshCw size={17} /> {loading ? "Chargement…" : "Actualiser les données"}</button>
+        {kind === "members" && memberFiltersActive && <button type="button" className="secondary" onClick={() => setMf(EMPTY_MF)}>Réinitialiser les filtres</button>}
+      </div>
       {error && <p role="alert" className="error-text" style={{ marginTop: 14 }}>{error}</p>}
       {notice && <p role="status" className="success-text" style={{ marginTop: 14 }}>{notice}</p>}
-      <p className="muted" style={{ marginTop: 14 }}>Données disponibles : {members.length} membres · {activities.length} activités · {filteredAttendance.length} lignes de présence correspondant aux filtres. Les exports sont générés dans ton navigateur à partir des données accessibles avec ton compte.</p>
     </div>
+
+    {report && <div className="panel" style={{ marginTop: 16 }}>
+      <h3 style={{ marginTop: 0 }}>Aperçu de ce qui sera exporté</h3>
+      <p className="muted" style={{ margin: "0 0 12px" }}>{report.filters.join("  ·  ")}</p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        {report.kpis.map(([label, value]) => (
+          <div key={label} style={{ background: "var(--brand-tint)", borderRadius: 12, padding: "10px 16px", minWidth: 110, textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "var(--brand)" }}>{value}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+      {!report.sheets.length && <p className="muted">Aucune feuille cochée.</p>}
+      {report.sheets.length > 0 && <>
+        <div className="type-tabs" style={{ marginBottom: 10 }}>
+          {report.sheets.map((sh, i) => (
+            <button key={sh.name} type="button" className={`type-tab${Math.min(sheetIdx, report.sheets.length - 1) === i ? " on" : ""}`} onClick={() => setSheetIdx(i)}>{sh.name} ({sh.rows.length})</button>
+          ))}
+        </div>
+        {preview && preview.rows.length > 0 && <>
+          <p className="muted" style={{ margin: "0 0 6px" }}>{preview.title} — {preview.rows.length} ligne(s), aperçu des 8 premières :</p>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead><tr>{preview.head.map((h, i) => <th key={`${h}-${i}`}>{h}</th>)}</tr></thead>
+              <tbody>{preview.rows.slice(0, 8).map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{String(c)}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
+        </>}
+      </>}
+      {!hasData && !loading && report.sheets.length > 0 && <p className="muted">Aucune donnée pour cette sélection.</p>}
+      <p className="muted" style={{ marginTop: 14 }}>
+        Données chargées : {data?.members.length ?? 0} membres · {data?.activities.length ?? 0} activités · {data?.attendance.length ?? 0} lignes de présence.
+        Un membre sans ligne de présence dans une activité dont l'appel a été fait est compté absent. Les exports sont générés dans ton navigateur.
+      </p>
+    </div>}
   </>;
 }
