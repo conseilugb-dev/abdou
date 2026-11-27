@@ -51,7 +51,7 @@ export type Options = {
 };
 
 export const REPORTS: { id: ReportKind; label: string; desc: string }[] = [
-  { id: "synthese", label: "Rapport complet", desc: "Le dossier le plus détaillé : points clés, graphiques, statistiques par type, mois, jour, profil (fonction, UFR, niveau, sexe), ponctualité, classement, cas particuliers, absences, liste nominative, matrice et détail des présences." },
+  { id: "synthese", label: "Rapport complet", desc: "Le dossier simple et complet : points clés en phrases, chiffres clés, graphiques, statistiques par type, par mois, par jour de la semaine et par activité, puis le détail de chaque membre (global, par type, par mois, par jour) et la liste des membres à relancer." },
   { id: "stats", label: "Statistiques & analyses", desc: "Analyse chiffrée avec graphiques : évolution par mois, jours de la semaine, types d'activité, profils des membres, classement d'assiduité, tendance et cas particuliers." },
   { id: "attendance", label: "Présences détaillées", desc: "Une ligne par membre et par activité : statut, méthode (QR / manuelle), heure d'arrivée, retard, ordre d'arrivée, invités." },
   { id: "roll", label: "Liste nominative", desc: "Pour chaque activité : la liste des noms des présents, des excusés, des absents et des invités, avec la ponctualité (première / dernière arrivée, retard moyen, part QR)." },
@@ -383,8 +383,10 @@ function sheetWeekday(acts: ActInfo[]): RSheet {
 function sheetProfile(stats: MStat[], key: "function_name" | "ufr" | "study_level" | "gender" | "scholarship" | "blood_group" | "locality", name: string, label: string): RSheet | null {
   const groups = new Map<string, MStat[]>();
   stats.forEach((s) => {
-    const v = String((s.m as unknown as Record<string, unknown>)[key] ?? "").trim() || "Non renseigné";
-    groups.set(v, [...(groups.get(v) ?? []), s]);
+    const raw = String((s.m as unknown as Record<string, unknown>)[key] ?? "").trim();
+    // Le poste peut être multiple (« CA, CL ») : le membre est compté dans chaque poste
+    const parts = key === "function_name" ? raw.split(/[,;/+&|]| et /i).map((x) => x.trim()).filter(Boolean) : raw ? [raw] : [];
+    (parts.length ? parts : ["Non renseigné"]).forEach((v) => groups.set(v, [...(groups.get(v) ?? []), s]));
   });
   if (!stats.length || (groups.size === 1 && groups.has("Non renseigné"))) return null;
   const rows: Cell[][] = [...groups.entries()].map(([g, l]) => {
@@ -419,6 +421,54 @@ function sheetHighlights(stats: MStat[]): RSheet {
   return {
     name: "Cas particuliers", title: "Cas particuliers : assidus, à relancer, jamais présents",
     head: ["Catégorie", "Membre", "Téléphone", "Fonction", "Appels concernés", "Présences", "Absences + excusés", "Taux (%)", "Absences d'affilée (en cours)"], rows,
+  };
+}
+
+/** Version courte : une ligne simple par membre. */
+function sheetMemberSimple(stats: MStat[]): RSheet {
+  const sorted = [...stats].sort((a, b) => a.m.last_name.localeCompare(b.m.last_name, "fr") || a.m.first_name.localeCompare(b.m.first_name, "fr"));
+  const rows = sorted.map((s) => [fullName(s.m), s.held, s.p, s.e, s.x, s.held ? s.rate : "", s.last ? D(s.last) : "", s.streak] as Cell[]);
+  return {
+    name: "Par membre", title: "Présence de chaque membre",
+    head: ["Membre", "Appels concernés", "Présences", "Excusés", "Absences", "Taux (%)", "Dernière présence", "Absences d'affilée (en cours)"], rows,
+  };
+}
+
+/** Taux de présence de chaque membre, mois par mois. */
+function sheetMemberByMonth(pool: RMember[], acts: ActInfo[]): RSheet | null {
+  const held = acts.filter((a) => a.marked);
+  const keys = [...new Set(held.map((a) => a.a.start_datetime.slice(0, 7)))].sort();
+  if (!keys.length) return null;
+  const sorted = [...pool].sort((a, b) => a.last_name.localeCompare(b.last_name, "fr") || a.first_name.localeCompare(b.first_name, "fr"));
+  const rows = sorted.map((m) => {
+    const cells = keys.map((k) => {
+      const l = held.filter((a) => a.a.start_datetime.slice(0, 7) === k);
+      return pct(l.filter((a) => a.status.get(m.id) === "Présent").length, l.length);
+    });
+    return [fullName(m), ...cells, pct(held.filter((a) => a.status.get(m.id) === "Présent").length, held.length)] as Cell[];
+  });
+  return {
+    name: "Membre x mois", title: "Taux de présence de chaque membre par mois (%)",
+    head: ["Membre", ...keys.map((k) => `${monthLabel(k)} (%)`), "Global (%)"], rows, pdf: false,
+  };
+}
+
+/** Taux de présence de chaque membre selon le jour de la semaine. */
+function sheetMemberByWeekday(pool: RMember[], acts: ActInfo[]): RSheet | null {
+  const held = acts.filter((a) => a.marked);
+  const days = [1, 2, 3, 4, 5, 6, 0].filter((d) => held.some((a) => new Date(a.a.start_datetime).getDay() === d));
+  if (days.length < 2) return null;
+  const sorted = [...pool].sort((a, b) => a.last_name.localeCompare(b.last_name, "fr") || a.first_name.localeCompare(b.first_name, "fr"));
+  const rows = sorted.map((m) => {
+    const cells = days.map((d) => {
+      const l = held.filter((a) => new Date(a.a.start_datetime).getDay() === d);
+      return pct(l.filter((a) => a.status.get(m.id) === "Présent").length, l.length);
+    });
+    return [fullName(m), ...cells, pct(held.filter((a) => a.status.get(m.id) === "Présent").length, held.length)] as Cell[];
+  });
+  return {
+    name: "Membre x jour", title: "Taux de présence de chaque membre par jour de la semaine (%)",
+    head: ["Membre", ...days.map((d) => `${DAYS[d]} (%)`), "Global (%)"], rows, pdf: false,
   };
 }
 
@@ -525,6 +575,8 @@ function buildInsights(pool: RMember[], acts: ActInfo[], stats: MStat[]): string
   const top = [...wc].sort((a, b) => b.rate - a.rate || b.p - a.p).slice(0, 3);
   if (top.length) out.push(`Membres les plus assidus : ${top.map((s) => `${fullName(s.m)} (${s.rate} %)`).join(", ")}.`);
   out.push(`${wc.filter((s) => s.rate === 100).length} membre(s) à 100 % de présence · ${wc.filter((s) => s.p === 0).length} jamais présent(s) · ${wc.filter((s) => s.p > 0 && s.rate < 50).length} sous les 50 % · ${wc.filter((s) => s.streak >= 3).length} à relancer (3 absences d'affilée ou plus).`);
+  const relance = wc.filter((s) => s.streak >= 3).sort((a, b) => b.streak - a.streak);
+  if (relance.length) out.push(`À relancer en priorité : ${relance.slice(0, 5).map((s) => `${fullName(s.m)} (${s.streak} absences d'affilée)`).join(", ")}${relance.length > 5 ? ` … et ${relance.length - 5} autre(s)` : ""}.`);
   const allPres = held.flatMap((a) => a.rows.filter((r) => r.status === "Présent"));
   if (allPres.length) {
     const qr = allPres.filter((r) => r.method === "qr").length;
@@ -563,6 +615,16 @@ function buildCharts(acts: ActInfo[], stats: MStat[]): RChart[] {
       items: months.map((k) => {
         const l = held.filter((a) => a.a.start_datetime.slice(0, 7) === k);
         return { label: k.slice(5) + "/" + k.slice(2, 4), value: pct(sum(l.map((a) => a.present)), sum(l.map((a) => a.present + a.excused + a.absent))) };
+      }),
+    });
+  }
+  const dayKeys = [1, 2, 3, 4, 5, 6, 0].filter((d) => held.some((a) => new Date(a.a.start_datetime).getDay() === d));
+  if (dayKeys.length > 1) {
+    charts.push({
+      title: "Taux de présence par jour de la semaine", kind: "bar", unit: "%",
+      items: dayKeys.map((d) => {
+        const l = held.filter((a) => new Date(a.a.start_datetime).getDay() === d);
+        return { label: DAYS[d].slice(0, 3), value: pct(sum(l.map((a) => a.present)), sum(l.map((a) => a.present + a.excused + a.absent))) };
       }),
     });
   }
@@ -630,6 +692,22 @@ export function buildReport(kind: ReportKind, d: ExportData, opts: Options): Rep
       ["Retard moyen (min)", delays.length ? Math.round(sum(delays) / delays.length) : ""],
     ],
   };
+  const lean: RSheet = {
+    name: "Chiffres clés", title: "Chiffres clés de la période", kv: true, head: ["Indicateur", "Valeur"],
+    rows: [
+      ["Membres pris en compte", pool.length], ["Activités dans la période", acts.length], ["Appels réalisés", held.length],
+      ["Présences", P], ["Excusés", E], ["Absences (non excusées)", A], ["Taux de présence global (%)", pct(P, P + E + A)],
+      ["Moyenne de présents par activité", held.length ? avg1(held.map((a) => a.present)) : 0],
+      ["Meilleure présence", best ? `${best.a.name} (${D(best.a.start_datetime)}) : ${best.rate} %` : ""],
+      ["Plus faible présence", worst ? `${worst.a.name} (${D(worst.a.start_datetime)}) : ${worst.rate} %` : ""],
+      ["Meilleur mois", monthRates.length ? `${monthLabel(monthRates[0].k)} : ${monthRates[0].rate} %` : ""],
+      ["Mois le plus faible", monthRates.length > 1 ? `${monthLabel(monthRates[monthRates.length - 1].k)} : ${monthRates[monthRates.length - 1].rate} %` : ""],
+      ["Membres à 100 % de présence", withCalls.filter((s) => s.rate === 100).length],
+      ["Membres jamais présents", withCalls.filter((s) => s.p === 0).length],
+      ["Membres à relancer (3 absences d'affilée ou +)", withCalls.filter((s) => s.streak >= 3).length],
+      ...(guestTotal ? [["Invités (personnes extérieures)", guestTotal] as Cell[]] : []),
+    ],
+  };
   const insightSheet: RSheet = { name: "Points clés", title: "Points clés de la période", head: ["N°", "Constat"], rows: insights.map((t, i) => [i + 1, t]) };
 
   const goudi = sheetGoudi(pool, acts);
@@ -648,10 +726,9 @@ export function buildReport(kind: ReportKind, d: ExportData, opts: Options): Rep
 
   if (kind === "synthese") {
     title = "Rapport complet";
-    add(summary, insightSheet, sheetTypes(acts), sheetMonthly(acts), sheetWeekday(acts), sheetByActivity(acts), sheetArrivals(acts), ...profiles);
-    add(sheetMemberStats(stats), sheetRanking(stats), sheetHighlights(stats), sheetAbsences(stats), goudi);
-    add(byType ? { ...byType, pdf: false } : null);
-    add({ ...sheetRoll(d, pool, acts), pdf: false }, { ...sheetMatrix(pool, acts), pdf: false }, { ...sheetAttendance(pool, acts, o.includeUnmarked), pdf: false }, guests);
+    // Dossier simple : points clés, chiffres clés, puis par type / mois / jour / activité, puis chaque membre
+    add(insightSheet, lean, sheetTypes(acts), sheetMonthly(acts), sheetWeekday(acts), sheetByActivity(acts));
+    add(sheetMemberSimple(stats), byType ? { ...byType, pdf: false } : null, sheetMemberByMonth(pool, acts), sheetMemberByWeekday(pool, acts), sheetHighlights(stats));
   } else if (kind === "stats") {
     title = "Statistiques et analyses";
     add(summary, insightSheet, sheetTypes(acts), sheetMonthly(acts), sheetWeekday(acts), ...profiles, sheetRanking(stats), sheetHighlights(stats), byType);

@@ -8,6 +8,7 @@ import ResetPassword from "./pages/ResetPassword";
 import CheckIn from "./pages/CheckIn";
 import MemberCard from "./pages/MemberCard";
 import Scan from "./pages/Scan";
+import ManagerLink from "./pages/ManagerLink";
 
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -147,6 +148,7 @@ export default function App() {
 
       <Route path="/checkin/:token" element={<CheckIn />} />
       <Route path="/card/:token" element={<MemberCard />} />
+      <Route path="/m/:token" element={<ManagerLink />} />
 
       <Route
         path="/login"

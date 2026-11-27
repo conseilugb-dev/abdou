@@ -23,10 +23,10 @@ export default function Members() {
   const [view,setView]=useState<"active"|"inactive"|"all">("active");
   const [open,setOpen]=useState(false);
   const SEXES=["Masculin","Féminin"];
-  const POSTES=["CA","CTC","CL","CIPS","SANTE","PF","Membre simple"];
+  const POSTES=["CA","CTC","CL","CIPS","SANTE","ACTION SOCIALE","PF","Membre simple"];
   const UFRS=["SAT","SJP","SEFS","SEG","S2ATA","CRAC","IPSL","2S","Formation","LSH","Autre"];
   // Champs demandés pour chaque membre. "locality" = Logement au campus, "room_number" = Numéro de chambre, "ufr" = UFR.
-  type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[]};
+  type FieldDef={key:string;label:string;required?:boolean;type?:string;options?:string[];multi?:boolean};
   const FIELD_DEFS:FieldDef[]=[
     {key:"first_name",label:"Prénom",required:true},
     {key:"last_name",label:"Nom",required:true},
@@ -39,7 +39,7 @@ export default function Members() {
     {key:"blood_group",label:"Groupe sanguin",options:["A+","A-","B+","B-","AB+","AB-","O+","O-"]},
     {key:"gender",label:"Sexe",options:SEXES},
     {key:"scholarship",label:"Boursier",options:["Oui","Non"]},
-    {key:"function_name",label:"Poste occupé dans la section de base",options:POSTES},
+    {key:"function_name",label:"Poste(s) occupé(s) dans la section de base",options:POSTES,multi:true},
     {key:"medical_notes",label:"Maladie chronique ou allergies"},
   ];
   const blankForm=():Record<string,string>=>({...Object.fromEntries(FIELD_DEFS.map(f=>[f.key,""])),status:"active"});
@@ -65,8 +65,21 @@ export default function Members() {
     {photoFile?<span className="muted" style={{fontSize:12}}>{photoFile.name}</span>:current?<img src={current} alt="" style={{width:56,height:56,borderRadius:"50%",objectFit:"cover",marginTop:6}}/>:null}
     {photoErr&&<span style={{color:"#b42318",fontSize:12}}>{photoErr}</span>}
   </label>;
-  const renderField=(f:FieldDef,values:Record<string,string>,set:(v:Record<string,string>)=>void)=>
-    <label key={f.key}>{f.label}{f.required?" *":""}
+  // Plusieurs valeurs possibles (cases à cocher), enregistrées séparées par une virgule : « CA, CL »
+  const renderField=(f:FieldDef,values:Record<string,string>,set:(v:Record<string,string>)=>void)=>f.multi&&f.options
+    ?<div key={f.key} style={{gridColumn:"1 / -1"}}>
+      <div style={{fontWeight:600,marginBottom:6}}>{f.label}</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{f.options.map(o=>{
+        const cur=(values[f.key]??"").split(/[,;]/).map(x=>x.trim()).filter(Boolean);
+        const on=cur.includes(o);
+        return <label key={o} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",border:"1px solid var(--line)",borderRadius:99,cursor:"pointer",background:on?"var(--brand-tint)":"transparent",fontWeight:on?700:500}}>
+          <input type="checkbox" checked={on} style={{width:"auto"}} onChange={()=>{
+            const next=on?cur.filter(x=>x!==o):[...cur,o];
+            set({...values,[f.key]:f.options!.filter(x=>next.includes(x)).join(", ")});
+          }}/>{o}</label>;
+      })}</div>
+    </div>
+    :<label key={f.key}>{f.label}{f.required?" *":""}
       {f.options
         ?<select required={f.required} value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}><option value="">—</option>{f.options.map(o=><option key={o} value={o}>{o}</option>)}</select>
         :<input required={f.required} type={f.type||"text"} {...(f.type==="number"?{min:1990,max:2100}:{})} value={values[f.key]??""} onChange={e=>set({...values,[f.key]:e.target.value})}/>}
@@ -191,7 +204,16 @@ export default function Members() {
   // Normalisation des valeurs importées (renvoie undefined si la valeur est remplie mais non reconnue)
   const normSexe=(v:unknown):string|null|undefined=>{const x=norm(v);if(!x)return null;if(x==="m"||x==="h"||x.startsWith("masc")||x.startsWith("homme")||x==="garcon")return "Masculin";if(x==="f"||x.startsWith("fem")||x==="femme"||x==="fille")return "Féminin";return undefined;};
   const normOuiNon=(v:unknown):string|null|undefined=>{const x=norm(v);if(!x)return null;if(["oui","o","yes","y","vrai","true","x"].includes(x))return "Oui";if(["non","n","no","faux","false"].includes(x))return "Non";return undefined;};
-  const normPoste=(v:unknown):string|null|undefined=>{const x=norm(v);if(!x)return null;if(["membresimple","simplemembre","membre","simple","ms"].includes(x))return "Membre simple";return POSTES.find(p=>norm(p)===x)||undefined;};
+  // Un membre peut avoir plusieurs postes : « CA, CL », « CA et CL », « CA / CL »… Renvoie [valeur, partiellementNonReconnu]
+  const normPoste=(v:unknown):[string|null,boolean]=>{
+    const raw=String(v??"").trim();if(!raw)return [null,false];
+    const found:string[]=[];let bad=false;
+    raw.split(/[,;/+&|\n]| et /i).map(t=>norm(t)).filter(Boolean).forEach(x=>{
+      const p=["membresimple","simplemembre","membre","simple","ms"].includes(x)?"Membre simple":POSTES.find(q=>norm(q)===x);
+      if(p){if(!found.includes(p))found.push(p);}else bad=true;
+    });
+    return [found.length?POSTES.filter(p=>found.includes(p)).join(", "):null,bad];
+  };
   const toDate=(v:unknown)=>{if(!v)return null;if(v instanceof Date&&!isNaN(+v))return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);const t=String(v).trim();const m=t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;return /^\d{4}-\d{2}-\d{2}$/.test(t)?t:null;};
   async function readFile(f:File){
     setImpMsg("");setImp(null);
@@ -209,9 +231,9 @@ export default function Members() {
         const first=String(g("first_name")).trim(),last=String(g("last_name")).trim();
         const t=(k:string)=>String(g(k)).trim()||null;
         if(!first||!last||!t("phone")){bad++;return;}
-        const sx=normSexe(g("gender")),bs=normOuiNon(g("scholarship")),po=normPoste(g("function_name"));
-        if(sx===undefined||bs===undefined||po===undefined)unk++;
-        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:sx??null,birth_date:toDate(g("birth_date")),locality:t("locality"),room_number:t("room_number"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group"),scholarship:bs??null,function_name:po??null,medical_notes:t("medical_notes")};
+        const sx=normSexe(g("gender")),bs=normOuiNon(g("scholarship")),[po,poBad]=normPoste(g("function_name"));
+        if(sx===undefined||bs===undefined||poBad)unk++;
+        const row:Imp={first_name:first,last_name:last,email:t("email"),phone:t("phone"),gender:sx??null,birth_date:toDate(g("birth_date")),locality:t("locality"),room_number:t("room_number"),study_field:t("study_field"),study_level:t("study_level"),ufr:(()=>{const nm=norm(g("ufr"));return nm?(UFRS.find(x=>norm(x)===nm)||null):null;})(),blood_group:t("blood_group"),scholarship:bs??null,function_name:po,medical_notes:t("medical_notes")};
         const id=`${norm(first)}|${norm(last)}`;
         const mine=phoneKey(row.phone);
         const known=byName.get(id);
@@ -238,7 +260,7 @@ export default function Members() {
     setImpMsg(`${toAdd.length} membre(s) ajouté(s).`);setImp(null);setIncludeReview(false);load();
   }
   function template(){
-    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Logement au campus","Numéro de chambre","Filière","Niveau d’étude","UFR","Groupe sanguin","Sexe","Boursier","Poste occupé dans la section de base","Maladie chronique ou allergies"],["Awa","Fall","awa@example.com","770000000","Pavillon A","12","Informatique","Licence 2","SAT","O+","Féminin","Oui","Membre simple","Asthme"]]);
+    const ws=XLSX.utils.aoa_to_sheet([["Prénom","Nom","Email","Téléphone","Logement au campus","Numéro de chambre","Filière","Niveau d’étude","UFR","Groupe sanguin","Sexe","Boursier","Poste occupé dans la section de base","Maladie chronique ou allergies"],["Awa","Fall","awa@example.com","770000000","Pavillon A","12","Informatique","Licence 2","SAT","O+","Féminin","Oui","CA, CL","Asthme"]]);
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Membres");XLSX.writeFile(wb,"modele-import-membres.xlsx");
   }
 
@@ -288,7 +310,7 @@ export default function Members() {
       <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setOpen(false)}>Annuler</button><button className="primary">Enregistrer</button></div>
     </form></div>}
     {impOpen&&<div className="modal-backdrop"><div className="modal"><div className="modal-head"><h2>Importer des membres</h2><button type="button" className="icon-btn" onClick={()=>setImpOpen(false)}>×</button></div>
-      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Logement au campus, Numéro de chambre, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin, <b>Sexe</b> (Masculin ou Féminin), <b>Boursier</b> (Oui ou Non), <b>Poste occupé dans la section de base</b> (CA, CTC, CL, CIPS, SANTE, PF ou Membre simple), <b>Maladie chronique ou allergies</b>. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
+      <div className="import-box"><p style={{marginTop:0}}>Fichier Excel (.xlsx, .xls) ou CSV avec les colonnes : <b>Prénom, Nom, Téléphone</b> (obligatoires), Email, Logement au campus, Numéro de chambre, Filière, Niveau d’étude, UFR (SAT, SJP, SEFS, SEG, S2ATA, CRAC, IPSL, 2S, Formation, LSH ou Autre), Groupe sanguin, <b>Sexe</b> (Masculin ou Féminin), <b>Boursier</b> (Oui ou Non), <b>Poste occupé dans la section de base</b> (CA, CTC, CL, CIPS, SANTE, PF ou Membre simple ; plusieurs postes possibles, séparés par une virgule : CA, CL), <b>Maladie chronique ou allergies</b>. Si deux personnes ont le même prénom et le même nom, le <b>numéro de téléphone</b> sert à les différencier.</p>
       <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{const f=e.target.files?.[0];if(f)readFile(f);}}/>
       <p style={{marginBottom:0}}><button type="button" className="secondary" onClick={template}>Télécharger le modèle</button></p></div>
       {imp&&<div className="success-box"><b>{imp.rows.length}</b> membre(s) à ajouter{imp.homonyms>0&&<> (dont <b>{imp.homonyms}</b> homonyme(s) différencié(s) par le téléphone)</>} · {imp.dup} doublon(s) ignoré(s) (même nom et même téléphone) · {imp.bad} ligne(s) sans nom, prénom ou téléphone ignorée(s){imp.unk>0&&<> · <b>{imp.unk}</b> ligne(s) avec une valeur de sexe, boursier ou poste non reconnue (cette case sera laissée vide)</>}</div>}

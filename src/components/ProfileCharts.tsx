@@ -3,20 +3,18 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
 type M = {
-  gender: string | null; scholarship: string | null; blood_group: string | null; function_name: string | null;
-  ufr: string | null; study_level: string | null; locality: string | null; medical_notes: string | null;
+  gender: string | null; scholarship: string | null; blood_group: string | null;
+  ufr: string | null; study_level: string | null; locality: string | null;
 };
 type Item = { label: string; value: number };
 
 const COLORS = ["#a2443a", "#d9a066", "#18794e", "#3b6ea5", "#8e5ea2", "#b54708", "#5b8c85", "#c76b98", "#6b7a99"];
 const GRAY = "#b5aaa4";
 const NR = "Non renseigné";
-const NO_ILLNESS = ["non", "aucune", "aucun", "rien", "neant", "ras", "nan", "n/a", "na", "-", "pas de maladie", "pas d allergie"];
 
 const SEXES = ["Masculin", "Féminin"];
 const BOURSE = ["Oui", "Non"];
 const SANG = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const POSTES = ["CA", "CTC", "CL", "CIPS", "SANTE", "PF", "Membre simple"];
 const UFRS = ["SAT", "SJP", "SEFS", "SEG", "S2ATA", "CRAC", "IPSL", "2S", "Formation", "LSH", "Autre"];
 const NIVEAUX = ["Licence 1", "Licence 2", "Licence 3", "Master 1", "Master 2", "Doctorat 1", "Doctorat 2", "Doctorat 3", "Docteur", "Autre"];
 const LOGEMENTS = [
@@ -132,7 +130,7 @@ export default function ProfileCharts() {
       const out: M[] = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await supabase.from("members")
-          .select("gender,scholarship,blood_group,function_name,ufr,study_level,locality,medical_notes")
+          .select("gender,scholarship,blood_group,ufr,study_level,locality")
           .eq("status", "active").order("id").range(from, from + 999);
         if (error) { setMembers([]); return; }
         out.push(...((data as unknown as M[]) || []));
@@ -144,13 +142,10 @@ export default function ProfileCharts() {
 
   const charts = useMemo(() => {
     const m = members || [];
-    const sante = m.map((x) => { const v = clean(x.medical_notes); return !v ? "" : NO_ILLNESS.includes(key(v).toLowerCase()) ? "Aucune" : "Avec maladie ou allergie"; });
     return {
       sexe: tally(m.map((x) => fixSexe(clean(x.gender))), SEXES, true),
       bourse: tally(m.map((x) => clean(x.scholarship)), BOURSE, true),
       sang: tally(m.map((x) => clean(x.blood_group)), SANG),
-      sante: tally(sante, ["Avec maladie ou allergie", "Aucune"], true),
-      poste: tally(m.map((x) => clean(x.function_name)), POSTES, true),
       ufr: tally(m.map((x) => clean(x.ufr)), UFRS),
       niveau: tally(m.map((x) => clean(x.study_level)), NIVEAUX),
       logement: tally(m.map((x) => clean(x.locality)), LOGEMENTS),
@@ -169,8 +164,6 @@ export default function ProfileCharts() {
         <Card title="Sexe"><Donut items={charts.sexe} /></Card>
         <Card title="Boursiers"><Donut items={charts.bourse} /></Card>
         <Card title="Groupe sanguin"><Donut items={charts.sang} /></Card>
-        <Card title="Maladie chronique ou allergies"><Donut items={charts.sante} /></Card>
-        <Card title="Poste dans la section de base"><Bars items={charts.poste} /></Card>
         <Card title="UFR"><Bars items={charts.ufr} /></Card>
         <Card title="Niveau d'étude"><Bars items={charts.niveau} /></Card>
         <Card title="Logement au campus"><Bars items={charts.logement} /></Card>

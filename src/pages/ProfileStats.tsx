@@ -8,26 +8,23 @@ type M = {
   gender: string | null; scholarship: string | null; blood_group: string | null; function_name: string | null; ufr: string | null;
   medical_notes: string | null; study_level: string | null; locality: string | null;
 };
-type Field = { title: string; order: string[]; keepZero?: boolean; get: (m: M) => string };
+type Field = { title: string; order: string[]; keepZero?: boolean; multi?: boolean; get: (m: M) => string };
 type Sel = { title: string; label: string; members: M[]; field?: Field };
 
 const SEXES = ["Masculin", "Féminin"];
 const BOURSE = ["Oui", "Non"];
 const SANG = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const POSTES = ["CA", "CTC", "CL", "CIPS", "SANTE", "PF", "Membre simple"];
 const UFRS = ["SAT", "SJP", "SEFS", "SEG", "S2ATA", "CRAC", "IPSL", "2S", "Formation", "LSH", "Autre"];
 const NIVEAUX = ["Licence 1", "Licence 2", "Licence 3", "Master 1", "Master 2", "Doctorat 1", "Doctorat 2", "Doctorat 3", "Docteur", "Autre"];
 const LOGEMENTS = [
   "HORS CAMPUS", "Village A", "Village B", "Village C", "Village D", "Village E", "Village F", "Village G", "Village H",
   "Village I", "Village J", "Village K", "Village L", "Village M", "Village N", "Village O", "Village P", "Village Q", "DAROUL MOURCHID",
 ];
-const AVEC = "Avec maladie ou allergie", AUCUNE = "Aucune", NR = "Non renseigné";
-const NO_ILLNESS = ["non", "aucune", "aucun", "rien", "neant", "ras", "nan", "n/a", "na", "-", "pas de maladie", "pas d allergie"];
+const NR = "Non renseigné";
 
 const clean = (v: unknown) => String(v ?? "").trim();
 const key = (v: unknown) => clean(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ");
 const fixSexe = (v: string) => { const k = key(v); return k === "M" || k === "H" ? "Masculin" : k === "F" ? "Féminin" : v; };
-const isNoIllness = (v: string) => NO_ILLNESS.includes(key(v).toLowerCase());
 const slug = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const pct = (n: number, t: number) => (t ? Math.round((n / t) * 1000) / 10 : 0);
 
@@ -35,24 +32,26 @@ const FIELDS: Field[] = [
   { title: "Boursier", order: BOURSE, keepZero: true, get: (m) => clean(m.scholarship) },
   { title: "Sexe", order: SEXES, keepZero: true, get: (m) => fixSexe(clean(m.gender)) },
   { title: "Groupe sanguin", order: SANG, keepZero: true, get: (m) => clean(m.blood_group) },
-  { title: "Poste occupé dans la section de base", order: POSTES, keepZero: true, get: (m) => clean(m.function_name) },
   { title: "UFR", order: UFRS, get: (m) => clean(m.ufr) },
   { title: "Niveau d'étude", order: NIVEAUX, get: (m) => clean(m.study_level) },
   { title: "Logement au campus", order: LOGEMENTS, get: (m) => clean(m.locality) },
-  { title: "Maladie chronique ou allergies", order: [AVEC, AUCUNE], keepZero: true,
-    get: (m) => { const v = clean(m.medical_notes); return !v ? "" : isNoIllness(v) ? AUCUNE : AVEC; } },
 ];
 
-/** Libellé (canonique) d'un membre pour un champ, ou « Non renseigné ». */
-function labelOf(m: M, f: Field) {
+const SPLIT = /[,;/+&|]| et /i;
+/** Libellés (canoniques) d'un membre pour un champ. Plusieurs pour un champ « multi » (ex. postes CA et CL). */
+function labelsOf(m: M, f: Field): string[] {
   const v = f.get(m);
-  if (!v) return NR;
-  return f.order.find((o) => key(o) === key(v)) ?? v;
+  const parts = !v ? [] : f.multi ? v.split(SPLIT).map(clean).filter(Boolean) : [v];
+  if (!parts.length) return [NR];
+  const out: string[] = [];
+  parts.forEach((p) => { const l = f.order.find((o) => key(o) === key(p)) ?? p; if (!out.includes(l)) out.push(l); });
+  return out;
 }
+const labelOf = (m: M, f: Field) => labelsOf(m, f).join(", ");
 
 function countField(list: M[], f: Field): [string, number][] {
   const tally = new Map<string, number>();
-  list.forEach((m) => { const l = labelOf(m, f); tally.set(l, (tally.get(l) ?? 0) + 1); });
+  list.forEach((m) => labelsOf(m, f).forEach((l) => tally.set(l, (tally.get(l) ?? 0) + 1)));
   const known = f.order.filter((o) => f.keepZero || tally.has(o)).map((o) => [o, tally.get(o) ?? 0] as [string, number]);
   const others = [...tally.entries()].filter(([l]) => l !== NR && !f.order.includes(l)).sort((a, b) => b[1] - a[1]);
   const rows = [...known, ...others];
@@ -101,25 +100,13 @@ export default function ProfileStats() {
   const popLabel = pop === "all" ? "Tous les membres" : pop === "Oui" ? "Boursiers" : "Non boursiers";
   const filePart = pop === "all" ? "tous" : pop === "Oui" ? "boursiers" : "non-boursiers";
 
-  // Détail des maladies / allergies déclarées
-  const detailMaladies = useMemo(() => {
-    const t = new Map<string, number>();
-    list.forEach((m) => {
-      const v = clean(m.medical_notes);
-      if (!v || isNoIllness(v)) return;
-      const k = v.toLowerCase();
-      t.set(k, (t.get(k) ?? 0) + 1);
-    });
-    return [...t.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => [k.charAt(0).toUpperCase() + k.slice(1), n] as [string, number]);
-  }, [list]);
-
   const open = (title: string, label: string, pred: (m: M) => boolean) => setSel({ title, label, members: list.filter(pred).sort(byName) });
   const openAll = (f: Field) => {
     const order = countField(list, f).map(([l]) => l);
-    const sorted = [...list].sort((a, b) => order.indexOf(labelOf(a, f)) - order.indexOf(labelOf(b, f)) || byName(a, b));
+    const sorted = [...list].sort((a, b) => order.indexOf(labelsOf(a, f)[0]) - order.indexOf(labelsOf(b, f)[0]) || byName(a, b));
     setSel({ title: f.title, label: "toutes les valeurs", members: sorted, field: f });
   };
-  const openField = (f: Field, label: string) => open(f.title, label, (m) => labelOf(m, f) === label);
+  const openField = (f: Field, label: string) => open(f.title, label, (m) => labelsOf(m, f).includes(label));
 
   // --- Exports ---
   function summarySheets(): Sheet[] {
@@ -129,13 +116,12 @@ export default function ProfileStats() {
         ["Non boursiers", nbNon, pct(nbNon, base.length)], ["Boursier non renseigné", nbNR, pct(nbNR, base.length)]],
     }];
     fields.forEach((f) => s.push({ name: f.title.slice(0, 30), head: [f.title, "Effectif", "%"], rows: countField(list, f).map(([l, n]) => [l, n, pct(n, total)]) }));
-    s.push({ name: "Détail maladies", head: ["Maladie ou allergie", "Effectif", "%"], rows: detailMaladies.map(([l, n]) => [l, n, pct(n, total)]) });
     return s;
   }
   /** Liste complète des membres, regroupés par valeur du champ. */
   function fieldListSheet(f: Field): Sheet {
     const rows: (string | number)[][] = [];
-    countField(list, f).forEach(([label]) => list.filter((m) => labelOf(m, f) === label).sort(byName).forEach((m) => rows.push([label, ...fullRow(m)])));
+    countField(list, f).forEach(([label]) => list.filter((m) => labelsOf(m, f).includes(label)).sort(byName).forEach((m) => rows.push([label, ...fullRow(m)])));
     return { name: "Liste", head: [f.title, ...FULL_HEAD], rows };
   }
   function selSheets(kind: "xlsx" | "pdf"): Sheet[] {
@@ -199,7 +185,7 @@ export default function ProfileStats() {
           {fields.map((f) => (
             <div className="panel table-wrap" key={f.title}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                <h2 style={{ margin: 0 }}>{f.title}</h2>
+                <h2 style={{ margin: 0 }}>{f.title}{f.multi && <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}> (plusieurs possibles)</span>}</h2>
                 <div className="att-actions">
                   <button className="secondary" title="Voir toutes les listes" onClick={() => openAll(f)}><Eye size={16} /> Voir</button>
                   <button className="secondary" title="Télécharger toutes les listes (Excel)" onClick={() => downloadExcel(`liste-${slug(f.title)}-${filePart}`, [fieldListSheet(f)])}><FileSpreadsheet size={16} /> Listes</button>
@@ -207,17 +193,6 @@ export default function ProfileStats() {
                 </div>
               </div>
               <Bars rows={countField(list, f)} onPick={(l) => openField(f, l)} />
-              {f.title === "Maladie chronique ou allergies" && !!detailMaladies.length && (
-                <>
-                  <h3 style={{ margin: "16px 0 6px", fontSize: 14 }}>Détail des cas déclarés</h3>
-                  <table>
-                    <thead><tr><th>Maladie / allergie</th><th style={{ width: 70 }}>Effectif</th></tr></thead>
-                    <tbody>{detailMaladies.map(([l, n]) => (
-                      <tr key={l} style={{ cursor: "pointer" }} title="Voir la liste"
-                        onClick={() => open("Maladie / allergie", l, (m) => clean(m.medical_notes).toLowerCase() === l.toLowerCase())}>
-                        <td>{l}</td><td><strong>{n}</strong></td></tr>))}</tbody>
-                  </table>
-                </>)}
             </div>))}
         </div>)}
 

@@ -42,9 +42,17 @@ export default function RecurringActivities({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const empty = { activity_type_id: "", name: "", location: "", weekday: "4", time: "21:00", duration: "" };
+  const empty = { activity_type_id: "", name: "", location: "", duration: "" };
   const [rows, setRows] = useState<Template[]>([]);
   const [form, setForm] = useState(empty);
+  // Jours de la semaine choisis (jour -> heure). Une activité peut avoir plusieurs jours, avec une heure par jour.
+  const [days, setDays] = useState<Record<number, string>>({ 4: "21:00" });
+  const selDays = DAY_ORDER.filter((d) => d in days);
+  const toggleDay = (d: number) => setDays((cur) => {
+    if (d in cur) { const { [d]: _removed, ...rest } = cur; return rest; }
+    const any = Object.values(cur)[0];
+    return { ...cur, [d]: any ?? "21:00" };
+  });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -67,20 +75,29 @@ export default function RecurringActivities({
   const sorted = [...rows].sort(
     (a, b) => DAY_ORDER.indexOf(a.weekday) - DAY_ORDER.indexOf(b.weekday) || a.start_time.localeCompare(b.start_time)
   );
+  // Autres jours de la même activité (même type et même nom), pour l'afficher dans la liste
+  const otherDays = (t: Template) => rows
+    .filter((x) => x.id !== t.id && x.name === t.name && x.activity_type_id === t.activity_type_id)
+    .sort((a, b) => DAY_ORDER.indexOf(a.weekday) - DAY_ORDER.indexOf(b.weekday))
+    .map((x) => `${DAYS[x.weekday].toLowerCase()} ${x.start_time.slice(0, 5)}`);
 
   async function add(e: FormEvent) {
     e.preventDefault();
+    if (!selDays.length) { setError("Choisis au moins un jour de la semaine."); return; }
     setBusy(true);
     setError("");
 
-    const { error: insertError } = await supabase.from("recurring_activities").insert({
-      activity_type_id: form.activity_type_id || null,
-      name: form.name.trim(),
-      location: form.location.trim() || null,
-      weekday: Number(form.weekday),
-      start_time: `${form.time}:00`,
-      duration_minutes: form.duration ? Number(form.duration) : null,
-    });
+    // Une ligne de récurrence par jour choisi (ex. jeudi 21:00 + dimanche 17:00)
+    const { error: insertError } = await supabase.from("recurring_activities").insert(
+      selDays.map((d) => ({
+        activity_type_id: form.activity_type_id || null,
+        name: form.name.trim(),
+        location: form.location.trim() || null,
+        weekday: d,
+        start_time: `${days[d]}:00`,
+        duration_minutes: form.duration ? Number(form.duration) : null,
+      }))
+    );
 
     if (insertError) {
       setError(friendly(insertError.message));
@@ -90,6 +107,7 @@ export default function RecurringActivities({
 
     await supabase.rpc("generate_recurring_activities");
     setForm(empty);
+    setDays({ 4: "21:00" });
     await load();
     onChanged();
     setBusy(false);
@@ -165,6 +183,7 @@ export default function RecurringActivities({
                     Chaque {DAYS[t.weekday].toLowerCase()} à {t.start_time.slice(0, 5)}
                     {durationText(t.duration_minutes)}
                     {t.location ? ` · ${t.location}` : ""}
+                    {otherDays(t).length > 0 && <span style={{ color: "var(--brand)", fontWeight: 600 }}> · aussi : {otherDays(t).join(", ")}</span>}
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -204,18 +223,32 @@ export default function RecurringActivities({
               Nom
               <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </label>
-            <label>
-              Jour de la semaine
-              <select value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>
-                {DAY_ORDER.map((d) => (
-                  <option key={d} value={d}>{DAYS[d]}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Heure de début
-              <input required type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
-            </label>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                Jour(s) de la semaine <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>: coche 2 jours si l'activité a lieu 2 fois par semaine</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {DAY_ORDER.map((d) => {
+                  const on = d in days;
+                  return (
+                    <label key={d} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", border: "1px solid var(--line)", borderRadius: 99, cursor: "pointer", background: on ? "var(--brand-tint)" : "transparent", fontWeight: on ? 700 : 500 }}>
+                      <input type="checkbox" checked={on} onChange={() => toggleDay(d)} style={{ width: "auto" }} />
+                      {DAYS[d]}
+                    </label>
+                  );
+                })}
+              </div>
+              {selDays.length > 0 && (
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10 }}>
+                  {selDays.map((d) => (
+                    <label key={d} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      Heure du {DAYS[d].toLowerCase()}
+                      <input required type="time" value={days[d]} onChange={(e) => setDays({ ...days, [d]: e.target.value })} style={{ width: "auto" }} />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
             <label>
               Durée en minutes (facultatif)
               <input
@@ -234,7 +267,7 @@ export default function RecurringActivities({
           </div>
           <div className="modal-actions">
             <button type="button" className="secondary" onClick={onClose}>Fermer</button>
-            <button className="primary" disabled={busy}>{busy ? "Ajout…" : "Ajouter la récurrence"}</button>
+            <button className="primary" disabled={busy}>{busy ? "Ajout…" : selDays.length > 1 ? `Ajouter les ${selDays.length} jours` : "Ajouter la récurrence"}</button>
           </div>
         </form>
       </div>

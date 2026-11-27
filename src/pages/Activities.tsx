@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import StatusBadge, { activityKind } from "../components/StatusBadge";
 import EmptyState from "../components/EmptyState";
 import { Link } from "react-router-dom";
-import { Pencil, Plus, QrCode, Repeat, Trash2, UserPlus } from "lucide-react";
+import { Link2, Pencil, Plus, QrCode, Repeat, Trash2, UserPlus } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "../lib/supabase";
 import PageHeader from "../components/PageHeader";
@@ -26,6 +26,8 @@ export default function Activities({ canDelete = false }: { canDelete?: boolean 
   const [items,setItems]=useState<ActivityType[]>([]);
   const [open,setOpen]=useState(false);
   const [qr,setQr]=useState<ActivityType|null>(null);
+  const [ml,setMl]=useState<ActivityType|null>(null);
+  const [mlInfo,setMlInfo]=useState<{token:string;revoked:boolean;last_used_at:string|null}|null>(null);
   const [editId,setEditId]=useState<string|null>(null);
   const [recurOpen,setRecurOpen]=useState(false);
   const [guestsFor,setGuestsFor]=useState<ActivityType|null>(null);
@@ -75,6 +77,26 @@ export default function Activities({ canDelete = false }: { canDelete?: boolean 
     }
     closeForm();load();
   }
+  // ----- Lien responsable (sans mot de passe) -----
+  const mlLink=(token:string)=>`${siteUrl}/m/${token}`;
+  async function openMl(a:ActivityType){
+    setMl(a);setMlInfo(null);
+    const {data,error}=await supabase.rpc("get_manager_link",{p_activity_id:a.id});
+    if(error){alert("Lien indisponible : "+error.message+" (as-tu exécuté supabase/manager_links.sql ?)");setMl(null);return;}
+    setMlInfo(data as {token:string;revoked:boolean;last_used_at:string|null});
+  }
+  async function regenMl(){
+    if(!ml||!confirm("Générer un nouveau lien ? L'ancien lien cessera immédiatement de fonctionner."))return;
+    const {data,error}=await supabase.rpc("regenerate_manager_link",{p_activity_id:ml.id});
+    if(error){alert(error.message);return;}
+    setMlInfo(data as {token:string;revoked:boolean;last_used_at:string|null});
+  }
+  async function toggleMl(){
+    if(!ml||!mlInfo)return;
+    const {error}=await supabase.rpc("set_manager_link_revoked",{p_activity_id:ml.id,p_revoked:!mlInfo.revoked});
+    if(error){alert(error.message);return;}
+    setMlInfo({...mlInfo,revoked:!mlInfo.revoked});
+  }
   async function remove(id:string){if(confirm("Supprimer cette activité ?")){await supabase.from("activities").delete().eq("id",id);load();}}
 
   // ----- Activités du jour et filtres -----
@@ -103,6 +125,7 @@ export default function Activities({ canDelete = false }: { canDelete?: boolean 
         <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
           <StatusBadge kind={activityKind(st)}/>
           {st!=="annulée"&&<button type="button" className="secondary" onClick={()=>setQr(a)}><QrCode size={16}/> QR</button>}
+          {st!=="annulée"&&<button type="button" className="secondary" onClick={()=>openMl(a)}><Link2 size={16}/> Lien responsable</button>}
           <button type="button" className="secondary" onClick={()=>setGuestsFor(a)}><UserPlus size={16}/> Invités{guestCounts[a.id]?` (${guestCounts[a.id]})`:""}</button>
           {st!=="annulée"&&<Link to="/attendance" className="primary" style={{textDecoration:"none"}}>Faire l'appel</Link>}
         </div>
@@ -110,13 +133,28 @@ export default function Activities({ canDelete = false }: { canDelete?: boolean 
     </div>
 
     <div className="type-tabs">{tabs.map(([k,l])=><button type="button" key={k} className={`type-tab${tab===k?" on":""}`} onClick={()=>setTab(k)}>{l}</button>)}</div>
-    <div className="panel table-wrap"><table><thead><tr><th>Nom</th><th>Type</th><th>Lieu</th><th>Date</th><th>Statut</th><th>Invités</th><th>QR</th><th>Actions</th></tr></thead><tbody>{shown.map(a=><tr key={a.id} style={effectiveStatus(a)==="en cours"?{background:"#eef8f2"}:undefined}><td>{a.name}</td><td><span className="badge">{typeName(a.activity_type_id)}</span></td><td>{a.location||"—"}</td><td>{new Date(a.start_datetime).toLocaleString("fr-FR")}</td><td><span className={`badge${effectiveStatus(a)==="en cours"?" active":""}`}>{effectiveStatus(a)==="en cours"?"● en cours":effectiveStatus(a)}</span></td><td><button type="button" className="secondary" style={{minHeight:34,padding:"5px 12px"}} onClick={()=>setGuestsFor(a)}><UserPlus size={15}/> Invités{guestCounts[a.id]?` (${guestCounts[a.id]})`:""}</button></td><td><button className="icon-btn" title="Afficher le QR code" onClick={()=>setQr(a)}><QrCode size={17}/></button></td><td><button className="icon-btn" title="Modifier" onClick={()=>openEdit(a)}><Pencil size={17}/></button>{canDelete&&<button className="icon-btn danger" title="Supprimer" onClick={()=>remove(a.id)}><Trash2 size={17}/></button>}</td></tr>)}</tbody></table>{!shown.length&&<EmptyState icon="activities" title="Aucune activité" hint="Crée la première activité pour pouvoir faire l'appel." actions={[{label:"Créer une activité",onClick:openNew}]}/>}</div>
+    <div className="panel table-wrap"><table><thead><tr><th>Nom</th><th>Type</th><th>Lieu</th><th>Date</th><th>Statut</th><th>Invités</th><th>QR</th><th>Actions</th></tr></thead><tbody>{shown.map(a=><tr key={a.id} style={effectiveStatus(a)==="en cours"?{background:"#eef8f2"}:undefined}><td>{a.name}</td><td><span className="badge">{typeName(a.activity_type_id)}</span></td><td>{a.location||"—"}</td><td>{new Date(a.start_datetime).toLocaleString("fr-FR")}</td><td><span className={`badge${effectiveStatus(a)==="en cours"?" active":""}`}>{effectiveStatus(a)==="en cours"?"● en cours":effectiveStatus(a)}</span></td><td><button type="button" className="secondary" style={{minHeight:34,padding:"5px 12px"}} onClick={()=>setGuestsFor(a)}><UserPlus size={15}/> Invités{guestCounts[a.id]?` (${guestCounts[a.id]})`:""}</button></td><td><button className="icon-btn" title="Afficher le QR code" onClick={()=>setQr(a)}><QrCode size={17}/></button></td><td><button className="icon-btn" title="Lien responsable (sans mot de passe)" onClick={()=>openMl(a)}><Link2 size={17}/></button><button className="icon-btn" title="Modifier" onClick={()=>openEdit(a)}><Pencil size={17}/></button>{canDelete&&<button className="icon-btn danger" title="Supprimer" onClick={()=>remove(a.id)}><Trash2 size={17}/></button>}</td></tr>)}</tbody></table>{!shown.length&&<EmptyState icon="activities" title="Aucune activité" hint="Crée la première activité pour pouvoir faire l'appel." actions={[{label:"Créer une activité",onClick:openNew}]}/>}</div>
     {open&&<div className="modal-backdrop"><form className="modal" onSubmit={save}><div className="modal-head"><h2>{editId?"Modifier l'activité":"Nouvelle activité"}</h2><button type="button" className="icon-btn" onClick={closeForm}>×</button></div>
       <div className="form-grid"><label>Type d'activité<select required value={form.activity_type_id} onChange={e=>{const id=e.target.value;setForm({...form,activity_type_id:id,name:form.name||types.find(t=>t.id===id)?.name||""})}}><option value="">— Choisir —</option>{types.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>Nom<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Lieu<input value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></label><label>Date/heure de début<input required type="datetime-local" value={form.start_datetime} onChange={e=>setForm({...form,start_datetime:e.target.value})}/></label><label>Date/heure de fin<input type="datetime-local" value={form.end_datetime} onChange={e=>setForm({...form,end_datetime:e.target.value})}/></label>{editId&&<label style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" style={{width:"auto"}} checked={form.cancelled} onChange={e=>setForm({...form,cancelled:e.target.checked})}/> Activité annulée</label>}</div>
       <p className="muted" style={{margin:"12px 0 0"}}>Le statut est automatique (prévue, en cours, terminée).{limit&&!isNaN(limit.getTime())?` Cette activité passera en « terminée » le ${limit.toLocaleString("fr-FR",{dateStyle:"medium",timeStyle:"short"})}, ${AUTO_CLOSE_HOURS} h après sa fin (ou après son début si aucune fin n'est indiquée).`:""}</p>
       <div className="modal-actions"><button type="button" className="secondary" onClick={closeForm}>Annuler</button><button className="primary">{editId?"Enregistrer les modifications":"Enregistrer"}</button></div>
     </form></div>}
     {qr&&<div className="modal-backdrop" onClick={()=>setQr(null)}><div className="modal" style={{textAlign:"center",width:"min(420px,100%)"}} onClick={e=>e.stopPropagation()}><div className="modal-head"><h2>{qr.name}</h2><button type="button" className="icon-btn" onClick={()=>setQr(null)}>×</button></div><div style={{background:"#fff",padding:16,display:"inline-block",borderRadius:12,border:"1px solid #e6e8ec"}}><QRCodeSVG value={qrLink(qr)} size={260} level="M"/></div><p className="muted">Les membres scannent ce code pour se marquer présents, de 30 minutes avant le début jusqu'à la fin de l'activité (statut « terminée »).</p><p style={{fontSize:12,wordBreak:"break-all",color:"#667085",margin:"0 0 12px"}}>{qrLink(qr)}</p><button type="button" className="secondary full" onClick={()=>navigator.clipboard.writeText(qrLink(qr)).then(()=>alert("Lien copié"))}>Copier le lien</button></div></div>}
+    {ml&&<div className="modal-backdrop" onClick={()=>setMl(null)}><div className="modal" style={{width:"min(460px,100%)"}} onClick={e=>e.stopPropagation()}><div className="modal-head"><h2>Lien responsable</h2><button type="button" className="icon-btn" onClick={()=>setMl(null)}>×</button></div>
+      <p style={{margin:"0 0 8px",fontWeight:700}}>{ml.name}</p>
+      {!mlInfo?<p role="status">Chargement…</p>:<>
+        <p className="muted" style={{margin:"0 0 10px"}}>Donne ce lien aux 2 responsables de l'activité : il ouvre la feuille d'appel sans mot de passe, uniquement pour cette activité, de 1 h avant le début jusqu'à 3 h après la fin. Ne le partage pas publiquement.</p>
+        {mlInfo.revoked&&<div className="error-box" role="alert">Ce lien est désactivé.</div>}
+        <p style={{fontSize:12,wordBreak:"break-all",color:"#667085",margin:"0 0 12px"}}>{mlLink(mlInfo.token)}</p>
+        <div style={{display:"grid",gap:8}}>
+          <button type="button" className="primary full" disabled={mlInfo.revoked} onClick={()=>navigator.clipboard.writeText(mlLink(mlInfo.token)).then(()=>alert("Lien copié"))}>Copier le lien</button>
+          <a className="secondary full" style={{textDecoration:"none",textAlign:"center"}} target="_blank" rel="noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`Lien pour faire l'appel — ${ml.name} (${new Date(ml.start_datetime).toLocaleString("fr-FR",{dateStyle:"medium",timeStyle:"short"})}) : ${mlLink(mlInfo.token)}`)}`}>Envoyer par WhatsApp</a>
+          <button type="button" className="secondary full" onClick={toggleMl}>{mlInfo.revoked?"Réactiver le lien":"Désactiver le lien"}</button>
+          <button type="button" className="secondary full" onClick={regenMl}>Générer un nouveau lien</button>
+        </div>
+        <p className="muted" style={{margin:"10px 0 0",fontSize:12}}>{mlInfo.last_used_at?`Dernière utilisation : ${new Date(mlInfo.last_used_at).toLocaleString("fr-FR")}`:"Jamais utilisé."}</p>
+      </>}
+    </div></div>}
     {guestsFor&&<ActivityGuests activity={guestsFor} onClose={()=>setGuestsFor(null)} onChanged={load}/>}
     {recurOpen&&<RecurringActivities types={types} onClose={()=>setRecurOpen(false)} onChanged={load}/>}
   </>;
